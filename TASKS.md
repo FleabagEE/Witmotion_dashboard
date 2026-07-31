@@ -45,7 +45,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Async acquisition engine | done | Controls | simulator | 18 tests + live hardware | `engine.py` |
 | Exclusive port ownership | done | Controls | — | Advisory lock, 3 tests | `portlock.py` |
 | Unified measurement model | done | Architect | capability schema | Schema-versioned envelope | `measurement.py` |
-| Local spool + replay | todo | Backend | engine | Kill -9 mid-write, replay intact | — |
+| Local spool + replay | done | Backend | engine | SIGKILL mid-write + live outage drill | `spool.py` |
 | Discovery + confidence scoring | todo | Controls | engine | Duplicate-ID detection test | — |
 | systemd units (hardened) | todo | DevSecOps | engine | `systemd-analyze security` | — |
 
