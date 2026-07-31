@@ -447,20 +447,6 @@ class AlarmEvaluator
         $event->acknowledgement_note = $note;
         $event->save();
 
-        // Notify on escalation only. Telling somebody an alarm got less severe,
-        // or cleared on its own, is noise that trains people to ignore the
-        // channel - and the dashboard already shows it.
-        if (AlarmEvent::rank($to) > AlarmEvent::rank($from) && $to !== 'normal') {
-            try {
-                app(NotificationDispatcher::class)->dispatch($event);
-            } catch (\Throwable $exception) {
-                // A notification fault must never roll back the alarm itself.
-                \Illuminate\Support\Facades\Log::error('notification dispatch failed', [
-                    'alarm_event_id' => $event->id, 'error' => $exception->getMessage(),
-                ]);
-            }
-        }
-
         AlarmTransition::create([
             'alarm_event_id' => $event->id,
             'from_level' => $event->level,
