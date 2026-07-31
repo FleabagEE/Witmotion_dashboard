@@ -149,6 +149,60 @@ zero blocks. This is precisely the failure the verification gate exists to catch
 **Next step:** confirm the model from the case label, then apply stimulus and
 re-run `observe.py`. See "Pending experiments" below.
 
+### 2026-07-31 — WTVB01-485 stimulus tests (model confirmed by operator)
+
+Two captures with physical excitation (operator tapping the mounting surface),
+full register space 0x00-0x7C, 455 samples over 130 s at 3.5 Hz, zero failed
+reads.
+
+**Established beyond reasonable doubt:**
+
+| Registers | Assignment | Evidence |
+|---|---|---|
+| 0x30-0x33 | Device time (YYMM/DDHH/MMSS/ms) | 0x33 cycles 6-996; 0x32 second-byte steps once per second |
+| 0x34-0x36 | Acceleration X/Y/Z, `raw/32768*16` g | Three axes at rest sum to 0.993 g |
+| 0x37-0x39 | Angular velocity X/Y/Z | Near zero at rest, responds strongly to excitation |
+| 0x40 | Temperature, `raw/100` degC | 24.2 degC, stable across both captures |
+| 0x3B-0x3F, 0x42-0x43 | **Unpopulated** | Exactly zero through the hardest excitation |
+
+**Vibration outputs exist and are zero at rest.** Registers that were exactly
+zero during quiet windows and carried data under excitation: 0x3A, 0x41,
+0x44, 0x45, 0x46, and sporadically several above 0x50.
+
+The strongest candidate triple is **0x44-0x46**: three consecutive registers,
+non-zero in 160/156/161 of 455 samples, matching the excitation windows almost
+exactly. Peaks 619 / 888 / 1258.
+
+**What probing could NOT establish:**
+
+1. Which quantity each register carries. The device documents 3-axis velocity,
+   3-axis displacement and 3-axis frequency. Peaks of 619-1258 are equally
+   consistent with 6.2-12.6 mm/s at 0.01 mm/s per count, or 619-1258 um at
+   1 um per count. Tapping cannot separate them, because a harder tap raises
+   all three at once.
+2. The scale factors. Documented ranges are velocity 0-50 mm/s, displacement
+   0-30000 um, frequency 1-100 Hz, but the counts-per-unit is not derivable
+   from an uncalibrated stimulus.
+3. Whether registers above 0x50 are real channels or artefacts. Correlations
+   there run 0.995-1.000, but that is confounded: every vibration register is
+   zero-when-quiet and positive-when-tapped, so they correlate regardless of
+   what they carry. Several are non-zero in only 5-52 of 455 samples, which
+   looks more like sparse noise than a channel.
+
+**Undocumented registers.** The manufacturer's parameter list for this model is
+"3-axis vibration velocity, 3-axis vibration displacement, 3-axis vibration
+frequency, chip temperature, on-chip time" - it does not mention acceleration or
+angular velocity. Yet both are unmistakably live at the WitMotion family
+addresses. They work, but they are undocumented for this model and a firmware
+revision could move or remove them. The profile may expose them only as
+`diagnostic`, never as a basis for alarms.
+
+**Conclusion: empirical probing is exhausted.** Everything remaining requires the
+manufacturer's Modbus register table. Guessing the velocity/displacement/
+frequency assignment from tap data would produce a profile that looks right and
+alarms wrongly, which is precisely what ADR-005 exists to prevent. Both profiles
+remain unverified.
+
 ### Pending experiments
 
 | # | Stimulus | Distinguishes |
