@@ -27,6 +27,13 @@ Quantity = Literal[
     "device_time",
     "identity",
     "diagnostic",
+    # Statistical descriptors computed on the device (RMS, kurtosis, crest
+    # factor, skewness...). These are the backbone of condition monitoring and,
+    # crucially, are computed on-sensor from its own high-rate sampling - so they
+    # are not limited by how fast we can poll the bus.
+    "condition_indicator",
+    # Vendor fault/diagnosis words. Opaque bit fields; never scaled.
+    "fault_code",
 ]
 ValueClass = Literal["native", "processed", "derived", "simulated", "imported"]
 

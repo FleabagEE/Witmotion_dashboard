@@ -94,7 +94,9 @@ class TestProfileStructure:
             "time_yymm": 0x30, "time_ddhh": 0x31, "time_mmss": 0x32, "time_ms": 0x33,
         }
         actual = {c.key: c.address for c in profile.channels}
-        assert actual == expected
+        # Core measurement channels. Condition indicators are covered separately
+        # in TestConditionIndicators.
+        assert {k: actual[k] for k in expected} == expected
 
     def test_reserved_registers_are_not_mapped(self, profile) -> None:
         """0x3D-0x3F are documented Reserved and read zero on hardware."""
@@ -123,6 +125,8 @@ class TestProfileStructure:
             "dominant_frequency",
             "temperature",
             "device_time",
+            "condition_indicator",
+            "fault_code",
         }
 
 
@@ -153,3 +157,74 @@ class TestAgainstSimulator:
         assert summary_reading.channels["vib_displacement_x"].value == pytest.approx(215.0, abs=1)
         assert summary_reading.channels["vib_frequency_x"].value == pytest.approx(61.9, abs=0.1)
         assert velocity_reading.channels["vib_velocity_x"].value == pytest.approx(20.10, abs=0.01)
+
+
+class TestConditionIndicators:
+    """Manual 10.4.11-10.4.14. Every indicator is raw/1000."""
+
+    @pytest.mark.parametrize("axis", ["x", "y", "z"])
+    def test_each_axis_has_twelve_indicators(self, profile, axis) -> None:
+        group = next(g for g in profile.register_groups if g.key == f"condition_{axis}")
+        assert len(group.channels) == 12
+        assert group.register_count == 12
+
+    def test_blocks_are_consecutive_and_adjacent(self, profile) -> None:
+        starts = {
+            k: next(g for g in profile.register_groups if g.key == f"condition_{k}").start_address
+            for k in ("x", "y", "z")
+        }
+        # Manual 10.4.11-10.4.13: 0x47-0x52, 0x53-0x5E, 0x5F-0x6A.
+        assert starts == {"x": 0x47, "y": 0x53, "z": 0x5F}
+
+    def test_x_block_uses_consecutive_layout_not_summary_table(self, profile) -> None:
+        """The 10.3 summary table omits 0x4D-0x4F; 10.4.11 does not.
+
+        Hardware sided with the detailed section: 0x4D-0x4F carry live
+        acceleration statistics while 0x50-0x52 sit at zero, matching their Y
+        and Z counterparts exactly.
+        """
+        assert profile.channel("peak_index_x").address == 0x4D
+        assert profile.channel("pulse_coefficient_x").address == 0x4E
+        assert profile.channel("skewness_x").address == 0x4F
+        assert profile.channel("rms_velocity_x").address == 0x50
+
+    @pytest.mark.parametrize(
+        ("key", "raw", "expected"),
+        [
+            ("rms_accel_x", 1234, 1.234),
+            ("kurtosis_x", 3000, 3.0),
+            ("cf_x", 1414, 1.414),
+            ("skewness_x", -1892, -1.892),
+            ("rms_velocity_x", 2800, 2.8),
+            ("rms_displacement_z", 500, 0.5),
+        ],
+    )
+    def test_indicator_scaling(self, profile, key, raw, expected) -> None:
+        channel = profile.channel(key)
+        assert channel.scale == 0.001
+        value = decode([raw & 0xFFFF], channel.data_type, scale=channel.scale)
+        assert value == pytest.approx(expected, abs=1e-9)
+
+    def test_all_three_axes_are_symmetric(self, profile) -> None:
+        suffixes = lambda axis: sorted(  # noqa: E731
+            c.key.removesuffix(f"_{axis}")
+            for c in next(g for g in profile.register_groups if g.key == f"condition_{axis}").channels
+        )
+        assert suffixes("x") == suffixes("y") == suffixes("z")
+
+    def test_fault_words_are_unscaled_bitfields(self, profile) -> None:
+        for key in ("fault_x", "fault_y", "fault_z"):
+            channel = profile.channel(key)
+            assert channel.scale == 1.0
+            assert channel.data_type == "uint16"
+            assert channel.quantity == "fault_code"
+
+    def test_condition_indicators_bypass_the_polling_ceiling(self, profile) -> None:
+        """These are computed on-device, so they are not rate-limited by us.
+
+        Documented as a capability rather than asserted numerically: the point is
+        that RMS/kurtosis here come from the sensor's own sampling, not from our
+        3.5 Hz register polling.
+        """
+        indicators = [c for c in profile.channels if c.quantity == "condition_indicator"]
+        assert len(indicators) == 36

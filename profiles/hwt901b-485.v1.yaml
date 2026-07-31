@@ -68,8 +68,15 @@ protected_commands:
   - {key: set_slave_id, label: Change Modbus address, address: 0x1A, requires_step_up: true, description: "Risk of address collision on a multi-drop bus."}
 
 limitations:
-  - "Gravity contributes approximately 1 g on the vertical axis when stationary."
-  - "Yaw is affected by motors, iron, strong AC fields and magnets; magnetic calibration may be required per installation."
-  - "In 6-axis mode yaw accumulates integration drift and has no absolute reference."
+  # Sourced from HWT901B-485 Datasheet V260209 and Application FAQ, supplied
+  # 2026-07-31. These are manufacturer statements, not inferences.
+  - "Gravity contributes approximately 1 g on the vertical axis when stationary (FAQ 13). This is not motion and must never be presented as vibration."
+  - "Yaw is affected by motors, stainless steel, strong AC fields, iron and magnets (FAQ 19). Keep the module at least 20 cm from such sources (datasheet 1.2)."
+  - "Magnetic interference test: magnetic field magnitude |H| should not exceed 300 when uninterfered (FAQ 19). Above that, treat yaw as untrustworthy."
+  - "In 6-axis mode yaw returns to zero on the next power-on; in 9-axis mode it retains its previous reference (FAQ 26). 6-axis yaw has no absolute reference and drifts."
   - "GX/GY/GZ are angular velocity, not translational velocity."
-  - "Translational velocity and displacement are not native measurements; if derived from acceleration they must be labelled derived and carry uncertainty."
+  - "The manufacturer explicitly does NOT recommend deriving displacement or speed from this module: error accumulates without bound over time (FAQ 11). Any derived channel must be optional, labelled derived, and carry that warning."
+  - "Accelerometer requires calibration after installation; production bias error is expected (FAQ 14)."
+  - "The module contains a barometric pressure sensor (datasheet 1.1), and pressure/height ranges are documented as 300-1100 hPa and -692.98 to 10266.29 m (FAQ 18). However the datasheet's stated data output content is time, acceleration, angular velocity, angle and magnetic field only. Pressure and altitude stay unmapped until confirmed present on the connected unit."
+  - "Accelerometer range +/-16 g at 0.0005 g/LSB (datasheet 2.1), consistent with the raw/32768*16 scaling used here."
+  - "REGISTER MAP NOT YET CONFIRMED. The supplied manual, datasheet and FAQ contain no Modbus register table. Addresses below follow the WitMotion family layout and remain candidate until the protocol/development manual is obtained or the unit is probed."
