@@ -1,0 +1,65 @@
+[Unit]
+Description=QuakeVault spool forwarder
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+After=network-online.target quakevault-acq.service
+Wants=network-online.target
+# Deliberately NOT Requires=: forwarding is allowed to be down while acquisition
+# keeps polling and spooling. The reverse is what must never happen.
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=quakevault-acq
+Group=quakevault-acq
+
+EnvironmentFile=/etc/quakevault/forwarder.env
+Environment=PYTHONPATH=/var/www/quakevault-industrial/acquisition/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/var/www/quakevault-industrial/.venv/bin/python -m qv_acq.forwarder_service \
+    --config /etc/quakevault/acquisition.yaml
+
+Restart=always
+RestartSec=5
+# Exit 2 is a rejected or missing token. Restarting cannot fix a credential.
+RestartPreventExitStatus=2
+
+WatchdogSec=120
+TimeoutStopSec=30
+
+StateDirectory=quakevault-acq
+RuntimeDirectory=quakevault-forwarder
+LogsDirectory=quakevault-acq
+
+# --- hardening ---------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+# No serial access at all: this process only reads a database file and speaks
+# HTTP. It is strictly less privileged than the acquisition service.
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged ~@resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+ReadWritePaths=/var/lib/quakevault-acq
+
+[Install]
+WantedBy=multi-user.target

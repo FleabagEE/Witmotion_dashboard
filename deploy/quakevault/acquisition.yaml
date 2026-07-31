@@ -23,6 +23,16 @@ metrics:
   interval_seconds: 10
   enabled: true
 
+forwarder:
+  enabled: true
+  base_url: http://127.0.0.1:8000/api/internal/v1/ingest
+  # The credential itself lives in /etc/quakevault/forwarder.env (mode 0600),
+  # never in this file, which is world-readable and version-controlled.
+  token_env: QV_INGEST_TOKEN
+  batch_size: 200
+  interval_seconds: 5
+  announce_profiles: true
+
 buses:
   - bus_id: BUS-001
     adapter_id: RS485-ADAPTER-001

@@ -8,6 +8,7 @@ test is far more expensive than one that refuses to boot.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,26 @@ class MetricsConfig(BaseModel):
     path: Path = Path("/var/lib/quakevault-acq/metrics.prom")
     interval_seconds: float = Field(default=10.0, gt=0)
     enabled: bool = True
+
+
+class ForwarderSettings(BaseModel):
+    """How the spool reaches the ingestion API."""
+
+    enabled: bool = True
+    base_url: str = "http://127.0.0.1:8000/api/internal/v1/ingest"
+    # The token is read from the environment, never from this file: the config is
+    # world-readable and version-controlled, an appliance credential is neither.
+    token_env: str = "QV_INGEST_TOKEN"
+    batch_size: int = Field(default=200, ge=1, le=1000)
+    interval_seconds: float = Field(default=5.0, gt=0)
+    request_timeout: float = Field(default=20.0, gt=0)
+    max_retries: int = Field(default=10, ge=1)
+    verify_tls: bool = True
+    ca_bundle: str | None = None
+    announce_profiles: bool = True
+
+    def token(self) -> str:
+        return os.environ.get(self.token_env, "")
 
 
 class SensorConfig(BaseModel):
@@ -110,6 +131,7 @@ class ApplianceConfig(BaseModel):
     buses: list[BusConfig] = Field(min_length=1)
     spool: SpoolConfig = Field(default_factory=SpoolConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    forwarder: ForwarderSettings = Field(default_factory=ForwarderSettings)
     simulated: bool = False
 
     @model_validator(mode="after")

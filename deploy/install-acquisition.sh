@@ -11,6 +11,7 @@ SERVICE_USER="quakevault-acq"
 CONFIG_DIR="/etc/quakevault"
 STATE_DIR="/var/lib/quakevault-acq"
 UNIT="quakevault-acq.service"
+FORWARDER_UNIT="quakevault-forwarder.service"
 
 log()  { printf '  %s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -102,18 +103,29 @@ else
     log "         sensors are not wired yet."
 fi
 
-echo "8. systemd unit"
+echo "8. Forwarder credential"
+if [[ -f "$CONFIG_DIR/forwarder.env" ]]; then
+    log "existing forwarder.env preserved"
+else
+    install -m 0600 -o root -g root "$REPO/deploy/quakevault/forwarder.env.example" \
+        "$CONFIG_DIR/forwarder.env"
+    log "installed forwarder.env (mode 0600) - set QV_INGEST_TOKEN before starting"
+fi
+
+echo "9. systemd units"
 install -m 0644 "$REPO/deploy/systemd/$UNIT" /etc/systemd/system/
+install -m 0644 "$REPO/deploy/systemd/$FORWARDER_UNIT" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable "$UNIT" >/dev/null
-log "installed and enabled"
+systemctl enable "$UNIT" "$FORWARDER_UNIT" >/dev/null
+log "installed and enabled $UNIT and $FORWARDER_UNIT"
 
 echo
 echo "Install complete."
 echo
-echo "  Start:   systemctl start $UNIT"
+echo "  Start:   systemctl start $UNIT $FORWARDER_UNIT"
 echo "  Status:  systemctl status $UNIT"
-echo "  Logs:    journalctl -u $UNIT -f"
+echo "  Logs:    journalctl -u $UNIT -u $FORWARDER_UNIT -f"
+echo "  Token:   set QV_INGEST_TOKEN in $CONFIG_DIR/forwarder.env"
 echo "  Config:  $CONFIG_DIR/acquisition.yaml"
 echo "  Hardening report: systemd-analyze security $UNIT"
 echo

@@ -59,6 +59,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Human users + roles | todo | Backend | skeleton | Auth feature tests | — |
 | Ingestion endpoint (idempotent) | done | Backend | API contract | 16 feature tests + live e2e | `IngestService` |
 | Spool forwarder | done | Backend | ingestion | 14 tests + live e2e | `forwarder.py` |
+| Forwarder systemd unit | done | DevSecOps | forwarder | Runs under systemd, backlog 0 sustained | `quakevault-forwarder.service` |
 | Sanctum appliance tokens | done | DevSecOps | skeleton | ingest-only ability enforced | `appliance:token` |
 | TimescaleDB policies | done | Backend | DB design | Compression, retention, rollup registered | verified in catalog |
 | Alarm engine | todo | Backend | ingestion | Hysteresis/debounce tests | — |

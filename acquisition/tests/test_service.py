@@ -224,3 +224,69 @@ class TestServiceRun:
 
     def test_missing_config_exits_two(self, tmp_path: Path) -> None:
         assert main(["--config", str(tmp_path / "nope.yaml"), "--check"]) == 2
+
+
+class TestForwarderSettings:
+    def test_shipped_example_configures_the_forwarder(self) -> None:
+        config = ApplianceConfig.model_validate(yaml.safe_load(REPO_CONFIG.read_text()))
+        assert config.forwarder.enabled
+        assert config.forwarder.base_url.endswith("/ingest")
+        assert config.forwarder.token_env == "QV_INGEST_TOKEN"
+
+    def test_token_never_appears_in_the_config_file(self) -> None:
+        """The credential lives in a 0600 env file, not in world-readable YAML."""
+        text = REPO_CONFIG.read_text().lower()
+        assert "token:" not in text
+        assert "bearer" not in text
+
+    def test_token_is_read_from_the_environment(self, monkeypatch) -> None:
+        config = ApplianceConfig.model_validate(yaml.safe_load(REPO_CONFIG.read_text()))
+        monkeypatch.setenv("QV_INGEST_TOKEN", "secret-value")
+        assert config.forwarder.token() == "secret-value"
+
+    def test_missing_token_is_empty_not_an_exception(self, monkeypatch) -> None:
+        config = ApplianceConfig.model_validate(yaml.safe_load(REPO_CONFIG.read_text()))
+        monkeypatch.delenv("QV_INGEST_TOKEN", raising=False)
+        assert config.forwarder.token() == ""
+
+
+class TestForwarderService:
+    def _config(self, tmp_path: Path) -> ApplianceConfig:
+        raw = config_dict("/dev/null", tmp_path)
+        raw["forwarder"] = {"enabled": True, "base_url": "http://127.0.0.1:9/ingest",
+                            "announce_profiles": False}
+        return ApplianceConfig.model_validate(raw)
+
+    def test_missing_token_exits_two(self, tmp_path: Path, monkeypatch) -> None:
+        """Exit 2 is wired to RestartPreventExitStatus in the unit file.
+
+        A missing credential is not transient; restart-looping would only hide it.
+        """
+        from qv_acq.forwarder_service import ForwarderService
+
+        monkeypatch.delenv("QV_INGEST_TOKEN", raising=False)
+        service = ForwarderService(self._config(tmp_path))
+        assert service.run(iterations=1) == 2
+
+    def test_writes_forwarder_metrics(self, tmp_path: Path, monkeypatch) -> None:
+        from qv_acq.forwarder import ForwardResult
+        from qv_acq.forwarder_service import ForwarderService
+
+        monkeypatch.setenv("QV_INGEST_TOKEN", "t")
+        service = ForwarderService(self._config(tmp_path))
+        service.write_metrics(ForwardResult(delivered=5, duplicates=1))
+        service.spool.close()
+
+        text = (tmp_path / "forwarder.prom").read_text()
+        assert "quakevault_forwarder_backlog" in text
+        assert "quakevault_forwarder_delivered_total" in text
+        assert "quakevault_forwarder_dead_letters" in text
+
+    def test_disabled_forwarder_exits_cleanly(self, tmp_path: Path) -> None:
+        from qv_acq.forwarder_service import main
+
+        raw = config_dict("/dev/null", tmp_path)
+        raw["forwarder"] = {"enabled": False}
+        path = tmp_path / "acquisition.yaml"
+        path.write_text(yaml.safe_dump(raw))
+        assert main(["--config", str(path)]) == 0
