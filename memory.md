@@ -17,9 +17,16 @@ engine changes.
 - Standalone repo at `/var/www/quakevault-industrial` (ADR-001). Distinct from
   `/var/www/quakevault-shm` and `/var/www/dashboard.quakelogic.net/laravel`,
   which remain in service and are not modified by this project.
-- PostgreSQL + TimescaleDB (ADR-002); Laravel + Sanctum; React/TS/Tailwind;
-  Redis Streams; Mosquitto for outbound integration only.
-- Python 3.12 acquisition service, `pymodbus` 3.14, `pydantic` 2.13.
+- Policy: run the latest stable of everything (operator decision, 2026-07-31).
+- Verified stack as of 2026-07-31: PostgreSQL **18.4** + TimescaleDB **2.29**,
+  Redis **8.10**, Laravel **13.23** on PHP **8.4.23**, Node 22, Python 3.12.3,
+  pymodbus 3.14, pydantic 2.13. Mosquitto for outbound integration only.
+- PostgreSQL 18 gotcha: the Docker volume must mount at `/var/lib/postgresql`,
+  NOT `/var/lib/postgresql/data`. Mounting the old path makes the container
+  refuse to start; 18 keeps its cluster in a major-version subdirectory so
+  `pg_upgrade --link` can run without crossing a mount boundary.
+- Our Redis is published on 6380; the host's 6379 belongs to another product.
+- PHP needs `php8.4-pgsql` installed; it is not in the base install.
 
 ## Acquisition
 

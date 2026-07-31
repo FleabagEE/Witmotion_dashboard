@@ -9,7 +9,7 @@
 
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:latest-pg18
     container_name: qv-timescaledb
     restart: unless-stopped
     environment:
@@ -22,7 +22,12 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - qv_timescale_data:/var/lib/postgresql/data
+      # PostgreSQL 18 changed the recommended layout: mount the parent directory,
+      # not .../data. The server then keeps its cluster in a major-version
+      # subdirectory, which is what lets `pg_upgrade --link` run later without
+      # crossing a mount boundary. Mounting .../data on 18+ makes the container
+      # refuse to start.
+      - qv_timescale_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quakevault -d quakevault"]
       interval: 10s
@@ -31,7 +36,7 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: qv-redis
     restart: unless-stopped
     command: >

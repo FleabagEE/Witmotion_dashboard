@@ -28,7 +28,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 | MQTT topic + payload schema | todo | Architect | measurement schema | Schema tests | — |
 | Ingestion API contract | todo | Backend | measurement schema | OpenAPI + contract tests | — |
-| Database design (hypertables) | todo | Backend | measurement schema | Migration + volume test | — |
+| Database design (hypertables) | done | Backend | measurement schema | 7 migrations applied, policies verified | TimescaleDB 2.29/pg18 |
 
 ## Phase 3 — Hardware foundation
 
@@ -55,9 +55,10 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 | Task | Status | Owner role | Depends on | Validation | Result |
 |---|---|---|---|---|---|
-| Laravel skeleton + Sanctum | todo | Backend | DB design | Auth feature tests | — |
+| Laravel skeleton | done | Backend | DB design | Connects to pg18, migrates clean | Laravel 13.23 |
+| Sanctum + roles | todo | Backend | skeleton | Auth feature tests | — |
 | Ingestion endpoint (idempotent) | todo | Backend | API contract | Replay-safety tests | — |
-| TimescaleDB migrations | todo | Backend | DB design | Retention + aggregate tests | — |
+| TimescaleDB policies | done | Backend | DB design | Compression, retention, rollup registered | verified in catalog |
 | Alarm engine | todo | Backend | ingestion | Hysteresis/debounce tests | — |
 | Notifications | todo | Backend | alarms | Delivery-status tests | — |
 | Reports (PDF/CSV) | todo | Backend | alarms | Reproducibility test | — |
