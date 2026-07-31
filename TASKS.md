@@ -25,7 +25,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Register encoder (inverse of decoder) | done | Backend | decoder | 8 round-trip tests | `encode.py` |
 | Modbus RTU simulator (both sensors) | done | Controls | profiles, encoder | 18 tests, end-to-end over pty | `simulator/` |
 | Profile-driven reader + quality flags | done | Backend | decoder | End-to-end vs simulator | `client.py` |
-| Normalised measurement schema | todo | Architect | capability schema | JSON-schema validation | — |
+
 | MQTT topic + payload schema | todo | Architect | measurement schema | Schema tests | — |
 | Ingestion API contract | todo | Backend | measurement schema | OpenAPI + contract tests | — |
 | Database design (hypertables) | todo | Backend | measurement schema | Migration + volume test | — |
@@ -42,7 +42,9 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Model 0x47-0x6A statistical features | todo | Signal | manual 10.4.11-10.4.17 | Fixtures per channel | — |
 
 | CRC-level fault injection in simulator | done | QA | simulator | Corrupt frames rejected, not decoded | `rtu.py` |
-| Async acquisition engine | todo | Controls | simulator | Soak against simulator | — |
+| Async acquisition engine | done | Controls | simulator | 18 tests + live hardware | `engine.py` |
+| Exclusive port ownership | done | Controls | — | Advisory lock, 3 tests | `portlock.py` |
+| Unified measurement model | done | Architect | capability schema | Schema-versioned envelope | `measurement.py` |
 | Local spool + replay | todo | Backend | engine | Kill -9 mid-write, replay intact | — |
 | Discovery + confidence scoring | todo | Controls | engine | Duplicate-ID detection test | — |
 | systemd units (hardened) | todo | DevSecOps | engine | `systemd-analyze security` | — |
