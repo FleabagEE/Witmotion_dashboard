@@ -65,7 +65,9 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Alarm engine | done | Backend | ingestion | 22 tests: hysteresis, persistence, latching | `AlarmEvaluator` |
 | Sensor liveness alarms | done | Backend | alarm engine | 7 tests + live failure drill | `alarms:sweep` |
 | Alarm evaluation on ingest | done | Backend | alarm engine | Wired outside the ingest transaction | `IngestService` |
-| Rate-of-change and baseline alarms | todo | Signal | alarm engine | Needs running-machine baseline | — |
+| Structural standards (DIN/BS) | done | Signal | alarm engine | 15 tests, frequency-interpolated | `StructuralVibration` |
+| Verify DIN 4150-3 / BS 7385-2 tables | blocked | Signal | standard text | Promote candidate -> verified | Needs standard |
+| Rate-of-change and baseline alarms | todo | Signal | alarm engine | Needs occupied-building baseline | — |
 | Notifications | todo | Backend | alarms | Delivery-status tests | — |
 | Reports (PDF/CSV) | todo | Backend | alarms | Reproducibility test | — |
 | Audit trail | todo | DevSecOps | auth | Coverage test | — |
@@ -93,5 +95,10 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 ## Blocked — operator action required
 
-1. Investigate VY/VZ/DY/DZ reading exactly zero on the WTVB01-485 (see
-   docs/register-maps.md). Ideally compare against a second unit.
+1. Send the WitMotion support request (drafted at
+   ~/Downloads/WTVB01-485-support-request.txt) and obtain a second WTVB01-485.
+   Until Y/Z velocity works, compliant structural monitoring is not possible.
+2. Supply DIN 4150-3 and/or BS 7385-2 standard text so the guideline tables can
+   be promoted from candidate to verified.
+3. Confirm structure class, measurement position, and whether the concern is
+   transient (blasting, piling) or long-term (traffic, settlement).

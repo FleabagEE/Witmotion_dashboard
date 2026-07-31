@@ -1,13 +1,23 @@
-# QuakeVault Industrial Monitoring Appliance
+# QuakeVault Structural Vibration Monitoring Appliance
 
-Enterprise monitoring appliance for industrial Modbus RTU sensors on RS-485,
-built for dedicated Ubuntu hosts.
+Monitors vibration effects on **buildings and structures** using RS-485 Modbus RTU
+sensors, on dedicated Ubuntu hosts.
+
+This is structural monitoring, not machine condition monitoring. The governing
+standards are DIN 4150-3 and BS 7385-2, which grade *peak* particle velocity by
+structure type and frequency - a different question, and different arithmetic,
+from asking whether a motor is healthy.
 
 Supported sensor:
 
 - **WTVB01-485** — MEMS vibration sensor. Triaxial acceleration, vibration
   velocity, displacement and dominant frequency, chip temperature, and 36
-  on-device condition indicators (RMS, kurtosis, crest factor, skewness...).
+  on-device statistical indicators.
+
+> **Read `docs/known-limitations.md` before trusting any structural reading.**
+> The unit in hand reports vibration velocity on the X axis only (a confirmed
+> device defect), and both standards require the maximum of three orthogonal
+> components. A compliant assessment cannot be produced until that is resolved.
 
 Additional sensors are added by writing a profile, never by changing the
 acquisition engine.

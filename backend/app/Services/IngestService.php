@@ -173,6 +173,25 @@ class IngestService
      * back data that arrived correctly - losing the reading is far worse than
      * missing one evaluation, which the next batch will redo anyway.
      */
+    /**
+     * Other channel values from the same sensor in this batch.
+     *
+     * A frequency-dependent structural limit needs the dominant frequency that
+     * accompanied the velocity reading, so evaluation cannot look at one channel
+     * in isolation.
+     */
+    private function siblingsFor(int $sensorId): array
+    {
+        $siblings = [];
+        foreach ($this->latest as $reading) {
+            if ($reading['sensor']->id === $sensorId && $reading['value'] !== null) {
+                $siblings[$reading['channel_key']] = (float) $reading['value'];
+            }
+        }
+
+        return $siblings;
+    }
+
     private function evaluateAlarms(): int
     {
         $changed = 0;
@@ -186,6 +205,7 @@ class IngestService
                     $reading['unit'],
                     $reading['at'],
                     $reading['quality'],
+                    $this->siblingsFor($reading['sensor']->id),
                 );
                 $changed += count($events);
             } catch (\Throwable $exception) {

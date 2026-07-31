@@ -10,7 +10,7 @@ use App\Models\Channel;
 use App\Models\Sensor;
 use App\Models\SensorModel;
 use App\Services\AlarmEvaluator;
-use App\Support\Iso10816;
+use App\Support\StructuralVibration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -33,8 +33,10 @@ class AlarmEngineTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $this->asset = Asset::create([
-            'site_id' => $site, 'slug' => 'pump-1', 'name' => 'Pump 1',
-            'iso_10816_class' => 'class_ii', 'rated_power_kw' => 45,
+            'site_id' => $site, 'slug' => 'wall-1', 'name' => 'North wall',
+            'asset_type' => 'structure', 'monitoring_domain' => 'structural',
+            'vibration_standard' => 'din4150_3', 'structure_class' => 'residential',
+            'measurement_position' => 'foundation',
         ]);
         $appliance = Appliance::create(['appliance_id' => 'QV-EDGE-TEST', 'name' => 'test']);
         $model = SensorModel::create([
@@ -78,22 +80,6 @@ class AlarmEngineTest extends TestCase
     private function openEvent(): ?AlarmEvent
     {
         return AlarmEvent::where('sensor_id', $this->sensor->id)->orderByDesc('id')->first();
-    }
-
-    public function test_iso_thresholds_match_the_standard(): void
-    {
-        $classII = Iso10816::thresholds('class_ii');
-        $this->assertSame(1.12, $classII['advisory']);
-        $this->assertSame(2.80, $classII['warning']);
-        $this->assertSame(7.10, $classII['critical']);
-    }
-
-    public function test_zones_map_to_the_standards_letters(): void
-    {
-        $this->assertSame('A', Iso10816::zoneFor('class_ii', 0.5));
-        $this->assertSame('B', Iso10816::zoneFor('class_ii', 2.0));
-        $this->assertSame('C', Iso10816::zoneFor('class_ii', 5.0));
-        $this->assertSame('D', Iso10816::zoneFor('class_ii', 9.0));
     }
 
     public function test_normal_values_raise_nothing(): void
@@ -281,55 +267,6 @@ class AlarmEngineTest extends TestCase
         $this->assertNull($this->openEvent());
     }
 
-    public function test_iso_defaults_are_provisioned_from_the_machine_class(): void
-    {
-        $definition = $this->evaluator->provisionIsoDefaults($this->asset);
-
-        $this->assertNotNull($definition);
-        $this->assertSame(1.12, $definition->advisory_at);
-        $this->assertSame(2.80, $definition->warning_at);
-        $this->assertSame(7.10, $definition->critical_at);
-        $this->assertSame('iso10816', $definition->source);
-        $this->assertGreaterThan(0, $definition->hysteresis);
-    }
-
-    public function test_iso_provisioning_is_idempotent(): void
-    {
-        $this->evaluator->provisionIsoDefaults($this->asset);
-        $this->evaluator->provisionIsoDefaults($this->asset);
-        $this->assertSame(1, AlarmDefinition::where('source', 'iso10816')->count());
-    }
-
-    public function test_inferred_class_is_labelled_as_inferred(): void
-    {
-        $this->asset->update(['iso_10816_class' => null, 'rated_power_kw' => 45]);
-        $definition = $this->evaluator->provisionIsoDefaults($this->asset->fresh());
-
-        $this->assertSame('class_ii', $definition->parameters['machine_class']);
-        $this->assertTrue($definition->parameters['derived_from_power']);
-        $this->assertSame('iso10816_inferred', $definition->source);
-        $this->assertStringContainsString('confirm the mounting', $definition->description);
-    }
-
-    public function test_asset_without_class_or_power_gets_no_guessed_thresholds(): void
-    {
-        $this->asset->update(['iso_10816_class' => null, 'rated_power_kw' => null]);
-        $this->assertNull($this->evaluator->provisionIsoDefaults($this->asset->fresh()));
-    }
-
-    public function test_provisioned_iso_alarm_fires_on_real_data(): void
-    {
-        $this->evaluator->provisionIsoDefaults($this->asset);
-
-        // Under the persistence window nothing raises...
-        $this->feed(8.5);
-        $this->assertSame('normal', $this->openEvent()->level);
-
-        // ...and once it holds, straight to critical: 8.5 mm/s is zone D for a
-        // 45 kW machine.
-        $this->feed(8.5, 15);
-        $this->assertSame('critical', $this->openEvent()->level);
-    }
 
     // ---- liveness -------------------------------------------------------
 
@@ -431,5 +368,108 @@ class AlarmEngineTest extends TestCase
 
         $this->assertNotNull($this->openEvent());
         $this->assertSame('critical', $this->openEvent()->level);
+    }
+
+    // ---- structural, frequency-dependent ---------------------------------
+
+    private function feedWithFrequency(float $velocity, float $frequencyHz, int $offset = 0): array
+    {
+        return $this->evaluator->evaluate(
+            $this->sensor, 'vib_velocity_x', $velocity, 'mm/s',
+            $this->t0->copy()->addSeconds($offset), 'good',
+            ['vib_frequency_x' => $frequencyHz],
+        );
+    }
+
+    public function test_structural_defaults_are_provisioned_from_the_standard(): void
+    {
+        $definition = $this->evaluator->provisionStructuralDefaults($this->asset);
+
+        $this->assertNotNull($definition);
+        $this->assertSame('structural_ppv', $definition->condition_type);
+        $this->assertSame('din4150_3', $definition->parameters['standard']);
+        // Static thresholds stay null: a fixed number would be wrong at most
+        // frequencies, which is the whole point of the standard.
+        $this->assertNull($definition->critical_at);
+        $this->assertSame(StructuralVibration::STATUS, $definition->parameters['standard_tables_status']);
+    }
+
+    public function test_an_asset_without_a_standard_gets_no_alarm(): void
+    {
+        $this->asset->update(['vibration_standard' => null, 'structure_class' => null]);
+        $this->assertNull($this->evaluator->provisionStructuralDefaults($this->asset->fresh()));
+    }
+
+    public function test_the_same_velocity_alarms_at_low_frequency_but_not_high(): void
+    {
+        $this->evaluator->provisionStructuralDefaults($this->asset);
+
+        // DIN 4150-3 line 2 foundation: 5 mm/s below 10 Hz, 15 mm/s at 50 Hz.
+        // 6 mm/s is past the guideline at 5 Hz...
+        $this->feedWithFrequency(6.0, 5.0);
+        $this->assertSame('critical', $this->openEvent()->level);
+    }
+
+    public function test_high_frequency_raises_the_limit(): void
+    {
+        $this->evaluator->provisionStructuralDefaults($this->asset);
+
+        // ...but the same 6 mm/s at 50 Hz is only 40% of the 15 mm/s limit,
+        // which is below even the advisory fraction. Frequency is not a detail.
+        $this->feedWithFrequency(6.0, 50.0);
+        $this->assertNull($this->openEvent());
+    }
+
+    public function test_without_a_dominant_frequency_nothing_is_evaluated(): void
+    {
+        $this->evaluator->provisionStructuralDefaults($this->asset);
+
+        // A frequency-dependent standard cannot be applied without a frequency.
+        // Assuming one to produce a number would be a silent invention.
+        $this->evaluator->evaluate(
+            $this->sensor, 'vib_velocity_x', 50.0, 'mm/s', $this->t0, 'good', [],
+        );
+
+        $this->assertNull($this->openEvent());
+    }
+
+    public function test_sensitive_structures_alarm_earlier_than_commercial(): void
+    {
+        $this->asset->update(['structure_class' => 'sensitive']);
+        $this->evaluator->provisionStructuralDefaults($this->asset->fresh());
+
+        // 3 mm/s is the guideline for a sensitive structure below 10 Hz.
+        $this->feedWithFrequency(3.2, 6.0);
+        $this->assertSame('critical', $this->openEvent()->level);
+    }
+
+    public function test_top_floor_position_uses_the_frequency_independent_row(): void
+    {
+        $this->asset->update(['measurement_position' => 'top_floor']);
+        $this->evaluator->provisionStructuralDefaults($this->asset->fresh());
+
+        // Residential top floor is 15 mm/s at every frequency. The same 8 mm/s
+        // measured at the foundation at 5 Hz would be critical against the
+        // 5 mm/s limit there; here it is 53% of the limit, so advisory.
+        // Measurement position is not a detail either.
+        $this->feedWithFrequency(8.0, 5.0);
+        $event = $this->openEvent();
+        $this->assertNotNull($event);
+        $this->assertSame('advisory', $event->level);
+        $this->assertEqualsWithDelta(7.5, $event->threshold, 1e-9);
+    }
+
+    public function test_structural_alarms_latch(): void
+    {
+        $this->evaluator->provisionStructuralDefaults($this->asset);
+
+        // A blast or a piling strike is over in seconds. If the alarm cleared
+        // itself nobody would ever see that the building was shaken.
+        $this->feedWithFrequency(9.0, 5.0);
+        $this->assertSame('critical', $this->openEvent()->level);
+
+        $this->feedWithFrequency(0.1, 5.0, 10);
+        $this->assertSame('critical', $this->openEvent()->level);
+        $this->assertSame('active', $this->openEvent()->state);
     }
 }

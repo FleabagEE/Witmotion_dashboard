@@ -7,7 +7,7 @@ use App\Models\AlarmEvent;
 use App\Models\AlarmTransition;
 use App\Models\Asset;
 use App\Models\Sensor;
-use App\Support\Iso10816;
+use App\Support\StructuralVibration;
 use Illuminate\Support\Carbon;
 
 /**
@@ -42,6 +42,7 @@ class AlarmEvaluator
         ?string $unit,
         Carbon $measuredAt,
         string $quality = 'good',
+        array $siblings = [],
     ): array {
         // A failed read is not a low reading. Alarming on it would report a
         // machine as healthy when in fact nothing was measured at all; sensor
@@ -52,6 +53,13 @@ class AlarmEvaluator
 
         $changed = [];
         foreach ($this->definitionsFor($sensor, $channelKey) as $definition) {
+            if ($definition->condition_type === 'structural_ppv'
+                && ! $this->resolveStructuralThresholds($definition, $channelKey, $siblings)) {
+                // Without the companion dominant frequency the standard's limit
+                // is undefined. Guessing a frequency to get a number would be
+                // exactly the silent inference this project refuses to make.
+                continue;
+            }
             $event = $this->applyDefinition($definition, $sensor, $channelKey, $value, $unit, $measuredAt);
             if ($event !== null) {
                 $changed[] = $event;
@@ -68,7 +76,7 @@ class AlarmEvaluator
         if (! isset($this->definitionCache[$cacheKey])) {
             $this->definitionCache[$cacheKey] = AlarmDefinition::query()
                 ->where('enabled', true)
-                ->where('condition_type', 'high_threshold')
+                ->whereIn('condition_type', ['high_threshold', 'structural_ppv'])
                 ->where(fn ($q) => $q->whereNull('sensor_id')->orWhere('sensor_id', $sensor->id))
                 ->where(fn ($q) => $q->whereNull('asset_id')->orWhere('asset_id', $sensor->asset_id))
                 ->get()
@@ -89,6 +97,51 @@ class AlarmEvaluator
             }
             yield $definition;
         }
+    }
+
+    /**
+     * Resolve a frequency-dependent structural limit for this sample.
+     *
+     * DIN 4150-3 and BS 7385-2 grade by frequency, so the threshold is not a
+     * property of the alarm - it is a property of the measurement. The limit is
+     * taken from the dominant frequency the device reported for the SAME axis,
+     * so a horizontal excursion is judged against the horizontal frequency.
+     */
+    private function resolveStructuralThresholds(
+        AlarmDefinition $definition,
+        string $channelKey,
+        array $siblings,
+    ): bool {
+        $parameters = $definition->parameters ?? [];
+        $axis = str_contains($channelKey, '_') ? substr($channelKey, strrpos($channelKey, '_') + 1) : null;
+        if ($axis === null) {
+            return false;
+        }
+
+        $frequency = $siblings['vib_frequency_'.$axis] ?? null;
+        if ($frequency === null || $frequency <= 0.0) {
+            return false;
+        }
+
+        $limit = StructuralVibration::limitFor(
+            (string) ($parameters['standard'] ?? ''),
+            (string) ($parameters['structure_class'] ?? ''),
+            (float) $frequency,
+            (string) ($parameters['position'] ?? 'foundation'),
+        );
+        if ($limit === null) {
+            return false;
+        }
+
+        $fractions = $parameters['level_fractions'] ?? ['advisory' => 0.5, 'warning' => 0.75, 'critical' => 1.0];
+        // Set on the in-memory instance only; never persisted, because the
+        // values are valid for this sample's frequency and no other.
+        $definition->advisory_at = round($limit * $fractions['advisory'], 4);
+        $definition->warning_at = round($limit * $fractions['warning'], 4);
+        $definition->critical_at = round($limit * $fractions['critical'], 4);
+        $definition->hysteresis = round($limit * 0.1, 4);
+
+        return true;
     }
 
     private function applyDefinition(
@@ -375,45 +428,64 @@ class AlarmEvaluator
     }
 
     /**
-     * Create ISO 10816 velocity alarms for an asset's machine class.
+     * Create structural vibration alarms for an asset from its governing
+     * standard, structure class and measurement position.
      *
-     * Defaults, not a substitute for a baseline measured on the machine itself.
-     * The source is recorded so an operator can tell derived limits from ones
-     * somebody chose deliberately.
+     * The guideline value itself is the damage-risk threshold, so it is mapped
+     * to critical. Advisory and warning at 50% and 75% are an operational
+     * convenience of this product, not part of the standard - recorded in
+     * parameters so nobody mistakes them for published values.
      */
-    public function provisionIsoDefaults(Asset $asset): ?AlarmDefinition
+    public function provisionStructuralDefaults(Asset $asset): ?AlarmDefinition
     {
-        $class = $asset->iso_10816_class ?: Iso10816::classFromPower($asset->rated_power_kw);
-        $thresholds = Iso10816::thresholds($class);
-        if ($thresholds === null) {
+        $standard = $asset->vibration_standard;
+        $class = $asset->structure_class;
+        $position = $asset->measurement_position ?: 'foundation';
+
+        if ($standard === null || $class === null) {
+            return null;
+        }
+        // Probe the table at a mid-band frequency purely to confirm the
+        // standard/class pair is known; the real limit is resolved per sample
+        // from the measured dominant frequency.
+        if (StructuralVibration::limitFor($standard, $class, 10.0, $position) === null) {
             return null;
         }
 
-        $derived = $asset->iso_10816_class === null;
-
         return AlarmDefinition::updateOrCreate(
-            ['key' => "iso10816:asset:{$asset->id}"],
+            ['key' => "structural:asset:{$asset->id}"],
             [
-                'name' => "ISO 10816 vibration velocity - {$asset->name}",
-                'description' => $thresholds['label'].($derived
-                    ? ' (class inferred from rated power; confirm the mounting)'
-                    : ''),
+                'name' => "Structural vibration - {$asset->name}",
+                'description' => sprintf(
+                    '%s, %s, measured at %s. Limits are frequency dependent and resolved per '
+                    .'sample from the measured dominant frequency. Standard tables are %s.',
+                    strtoupper(str_replace('_', ' ', $standard)), $class, $position,
+                    StructuralVibration::STATUS,
+                ),
                 'asset_id' => $asset->id,
                 'quantity' => 'vibration_velocity',
-                'condition_type' => 'high_threshold',
-                'unit' => Iso10816::UNIT,
-                'advisory_at' => $thresholds['advisory'],
-                'warning_at' => $thresholds['warning'],
-                'critical_at' => $thresholds['critical'],
-                'hysteresis' => round($thresholds['warning'] * Iso10816::HYSTERESIS_FRACTION, 4),
-                'persistence_seconds' => 10,
-                'clear_seconds' => 60,
+                'condition_type' => 'structural_ppv',
+                'unit' => 'mm/s',
+                // Thresholds are computed per sample, so the static columns stay
+                // null: a fixed number here would be wrong at most frequencies.
+                'advisory_at' => null,
+                'warning_at' => null,
+                'critical_at' => null,
+                'hysteresis' => 0.0,
+                'persistence_seconds' => 0,
+                'clear_seconds' => 30,
                 'debounce_seconds' => 5,
-                'latching' => false,
+                'latching' => true,
                 'enabled' => true,
                 'requires_verified_profile' => true,
-                'source' => $derived ? 'iso10816_inferred' : 'iso10816',
-                'parameters' => ['machine_class' => $class, 'derived_from_power' => $derived],
+                'source' => 'structural_standard',
+                'parameters' => [
+                    'standard' => $standard,
+                    'structure_class' => $class,
+                    'position' => $position,
+                    'level_fractions' => ['advisory' => 0.5, 'warning' => 0.75, 'critical' => 1.0],
+                    'standard_tables_status' => StructuralVibration::STATUS,
+                ],
             ],
         );
     }

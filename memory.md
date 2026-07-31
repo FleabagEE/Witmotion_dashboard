@@ -5,8 +5,13 @@ appliance. Session-specific detail does not belong here.
 
 ## Scope
 
-Enterprise industrial monitoring appliance for RS-485 Modbus RTU sensors on
-dedicated Ubuntu hosts. Supported sensor: WTVB01-485 only. The HWT901B-485 was
+**Structural** vibration monitoring appliance: sensors mounted on buildings and
+structures, NOT rotating machinery. Confirmed by the operator 2026-07-31 after the
+first unit was wall-mounted (ADR-014). Governing standards are DIN 4150-3 and
+BS 7385-2 (peak particle velocity, graded by structure class and frequency).
+ISO 10816 was removed - it answers a different question and applying machine
+limits to a wall is meaningless. RS-485 Modbus RTU on dedicated Ubuntu hosts.
+Supported sensor: WTVB01-485 only. The HWT901B-485 was
 evaluated and retired on 2026-07-31 (ADR-009) because the WTVB01 covers every
 needed channel; its profile survives in acquisition/tests/fixtures/ purely to keep
 the capability model under test. Further sensors are added as profiles, never as
@@ -64,10 +69,17 @@ engine changes.
 - Two errors the verification gate caught, both of which would have shipped a
   confidently wrong dashboard: 0x44-0x46 is frequency, not velocity; and velocity
   is `raw/100`, not `raw`.
-- OPEN: VY/VZ (0x3B/0x3C) and DY/DZ (0x42/0x43) read exactly zero on the unit in
-  hand, while all three frequency axes report non-zero. Y/Z velocity and
-  displacement alarms stay disabled pending a second unit. The sensor was sitting
-  loose on a desk during testing, which may contribute.
+- **CONFIRMED DEFECT**: VY/VZ (0x3B/0x3C) and DY/DZ (0x42/0x43) return exactly
+  zero in 1505/1505 samples with the sensor rigidly wall-mounted, including the
+  73 samples where the device itself reported dominant frequencies on Y and Z.
+  Either firmware 10059 computes velocity/displacement for X only, or the unit is
+  faulty; a second unit would tell them apart. **This blocks compliant structural
+  monitoring**: DIN 4150-3 and BS 7385-2 both evaluate the maximum of three
+  orthogonal components. Support request drafted at
+  /home/quakelogic/Downloads/WTVB01-485-support-request.txt.
+- Open question for the vendor: is the reported vibration velocity a peak or an
+  aggregate? The standards are defined on peak particle velocity, and the manual
+  does not say. Affects whether any comparison to a guideline value is valid.
 
 ## Measured bus capacity
 
