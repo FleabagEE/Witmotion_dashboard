@@ -79,11 +79,11 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 | Task | Status | Owner role | Depends on | Validation | Result |
 |---|---|---|---|---|---|
-| Design system | todo | UI/UX | — | Contrast + a11y audit | — |
-| Overview | todo | Frontend | API | Component tests | — |
-| Live Monitor | todo | Frontend | API | Smoothness at target rate | — |
+| Design system | done | UI/UX | — | Severity never colour-alone; tabular figures | `components/ui.tsx` |
+| Overview | done | Frontend | API | Verified live in browser | `pages/Overview.tsx` |
+| Live Monitor | done | Frontend | API | Live channels + ECharts, verified | `pages/SensorDetail.tsx` |
 | Signal Analysis (gated) | todo | Signal | throughput model | Refuses out-of-band requests | — |
-| Alarm Center | todo | Frontend | alarms | Workflow tests | — |
+| Alarm Center | done | Frontend | alarms | Acknowledge gated by ability | `pages/Alarms.tsx` |
 | Kiosk mode | todo | Frontend | auth roles | Survives reboot | — |
 
 ## Phase 6 — Hardening and validation

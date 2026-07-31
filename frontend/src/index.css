@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/*
+ * Control-room palette. Dark by default: these screens live in plant rooms and
+ * site offices, often on a wall, and a bright background at 2am is hostile.
+ *
+ * Severity colours are chosen to survive the common forms of colour blindness -
+ * they differ in lightness as well as hue, and every severity is also carried by
+ * a text label, never by colour alone.
+ */
+@theme {
+  --color-shell: #0b0f14;
+  --color-panel: #131a22;
+  --color-panel-2: #1a232d;
+  --color-line: #24313d;
+  --color-ink: #e6edf3;
+  --color-ink-dim: #8b9bab;
+
+  --color-ok: #3fb950;
+  --color-advisory: #d29922;
+  --color-warning: #f0883e;
+  --color-critical: #f85149;
+  --color-unknown: #6e7681;
+  --color-accent: #58a6ff;
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--color-shell);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures everywhere a measurement is shown: digits must not jitter as
+   values change, or a wall display becomes unreadable at a glance. */
+.tnum { font-variant-numeric: tabular-nums; }
