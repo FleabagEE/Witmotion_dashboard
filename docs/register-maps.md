@@ -91,7 +91,72 @@ with 120 ohm at both ends, and only the sensor under test is connected.
 
 ## Appendix: verification transcripts
 
-*(none yet - blocked on `dialout` group membership for the acquisition account)*
+### 2026-07-31 — device at slave 0x50, model NOT YET CONFIRMED
+
+```
+Adapter:      CH340 1a86:7523, USB topology 1-1, alias /dev/quakevault-rs485-a
+Bus scan:     addresses 1-247 at 9600 baud -> exactly one responder, 0x50
+Link:         9600 8N1, 40/40 reads succeeded, 0 failures
+Sample rate:  5.77 Hz effective, 1.06 ms jitter (33 registers, 80 ms pacing)
+Operator:     unattended probe; no stimulus applied (sensor at rest)
+```
+
+Register behaviour over 40 samples (~7 s):
+
+| Block | Addresses | Behaviour | Reading |
+|---|---|---|---|
+| Device time | 0x30-0x33 | 0x30/0x31 static, 0x32 stepping, 0x33 cycling 6-996 | YYMM / DDHH / MMSS / milliseconds |
+| Acceleration | 0x34-0x36 | near-static: 424, 10, 1988 | 0.207, 0.005, 0.971 g — **vector magnitude 0.993 g** |
+| Angular velocity | 0x37-0x39 | live, 10-15, span 3 | 0.6-0.9 deg/s — bias and noise at rest |
+| — | 0x3A-0x3F | **always zero** | unpopulated, or at rest |
+| Temperature | 0x40 | live, 2411-2430 | 24.11-24.30 degC |
+| — | 0x41-0x46 | **always zero** | unpopulated, or at rest |
+| Unidentified | 0x47-0x4F | mixed static and live; 0x48 swings +/-30000 | not interpreted |
+
+**Confirmed by this transcript** (independent of which model is attached):
+
+1. The device follows the WitMotion family base layout: a four-register time
+   block at 0x30, acceleration at 0x34-0x36, angular velocity at 0x37-0x39,
+   temperature at 0x40.
+2. Acceleration scaling `raw/32768*16` g is correct. The three axes at rest sum
+   to a vector magnitude of **0.993 g** — that is gravity, and no wrong scale
+   factor produces 1.0 by accident.
+3. Temperature scaling `raw/100` degC is correct: 24.2 degC against a room that
+   is plausibly that temperature.
+4. Milliseconds at 0x33 cycling 6-996 confirms the time block and its position.
+
+**Not yet confirmed:**
+
+- **Which sensor this is.** The evidence is compatible with two readings, and
+  the difference matters (see below).
+- What occupies 0x3A-0x3F and 0x41-0x46. Zero over a 7 s window at rest is
+  exactly what both an unpopulated channel and an idle vibration channel look
+  like. Only stimulus separates them.
+- The identity of 0x47-0x4F.
+
+**The ambiguity.** All-zero magnetometer (0x3A-0x3C) and attitude (0x3D-0x3F)
+argue *against* this being an HWT901B: a 9-axis AHRS sitting on a desk should
+report a magnetic field, and with 0.207 g on X it is tilted about 12 degrees, so
+roll and pitch should be clearly non-zero. That points to the WTVB01-485, whose
+vibration outputs would legitimately read zero at rest.
+
+If so, the shipped WTVB01 profile is **wrong**: it placed vibration velocity at
+0x34-0x36 and temperature at 0x3A, whereas this device has acceleration at
+0x34-0x36 and temperature at 0x40. The vibration outputs must live in one of the
+zero blocks. This is precisely the failure the verification gate exists to catch
+— the old profile would have reported acceleration as velocity in mm/s.
+
+**Next step:** confirm the model from the case label, then apply stimulus and
+re-run `observe.py`. See "Pending experiments" below.
+
+### Pending experiments
+
+| # | Stimulus | Distinguishes |
+|---|---|---|
+| 1 | Read the label on the connected unit | Settles the model question outright |
+| 2 | Tilt the sensor ~90 degrees, hold, re-run `observe.py` | HWT901B: 0x3D-0x3F come alive. WTVB01: they stay zero while 0x34-0x36 redistribute |
+| 3 | Vibrate the mount (tap it, or run a small motor against it) | WTVB01: one zero block comes alive with velocity/displacement/frequency |
+| 4 | Connect the second sensor at a different slave address | Confirms multi-drop and gives a side-by-side layout diff |
 
 ```
 Date:

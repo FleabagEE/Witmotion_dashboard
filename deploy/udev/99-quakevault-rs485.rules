@@ -1,0 +1,36 @@
+# QuakeVault industrial appliance - stable RS-485 adapter naming.
+#
+# /dev/ttyUSB* renumbers across reboots and replugs, so acquisition must never
+# reference it. These rules create stable aliases under /dev/quakevault-rs485-*.
+#
+# Two strategies, in order of preference:
+#
+#   1. Adapters that expose a USB serial number (FTDI FT232, most CP210x) are
+#      identified by that serial. This survives being moved between ports.
+#
+#   2. Adapters that do not (CH340/CH341 - confirmed absent on 1a86:7523) are
+#      identified by physical USB topology via KERNELS. This is stable across
+#      reboots but NOT across moving the adapter to a different port: doing so
+#      is a configuration change and must be recorded during commissioning.
+#
+# Install:
+#   sudo cp 99-quakevault-rs485.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=tty
+
+# --- Strategy 1: serial-number identity (preferred) ---
+
+# FTDI FT232 and friends.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{serial}=="?*", \
+  SYMLINK+="quakevault-rs485-$attr{serial}", GROUP="dialout", MODE="0660", TAG+="systemd"
+
+# Silicon Labs CP210x.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{serial}=="?*", \
+  SYMLINK+="quakevault-rs485-$attr{serial}", GROUP="dialout", MODE="0660", TAG+="systemd"
+
+# --- Strategy 2: topology identity (adapters with no serial number) ---
+
+# CH340 on USB port 1-1. Commissioned 2026-07-31.
+# Moving this adapter to another physical port requires updating KERNELS here
+# and the adapter record in the database.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", KERNELS=="1-1", \
+  SYMLINK+="quakevault-rs485-a", GROUP="dialout", MODE="0660", TAG+="systemd"
