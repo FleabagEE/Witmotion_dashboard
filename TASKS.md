@@ -57,7 +57,8 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Task | Status | Owner role | Depends on | Validation | Result |
 |---|---|---|---|---|---|
 | Laravel skeleton | done | Backend | DB design | Connects to pg18, migrates clean | Laravel 13.23 |
-| Human users + roles | todo | Backend | skeleton | Auth feature tests | — |
+| Human users + roles | done | Backend | skeleton | 24 API tests, role separation | `Roles`, `user:create` |
+| Dashboard read API | done | Backend | DB design | Overview, sensors, series, alarms | `ReadController` |
 | Ingestion endpoint (idempotent) | done | Backend | API contract | 16 feature tests + live e2e | `IngestService` |
 | Spool forwarder | done | Backend | ingestion | 14 tests + live e2e | `forwarder.py` |
 | Forwarder systemd unit | done | DevSecOps | forwarder | Runs under systemd, backlog 0 sustained | `quakevault-forwarder.service` |
