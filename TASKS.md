@@ -81,7 +81,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 |---|---|---|---|---|---|
 | Design system | done | UI/UX | — | Severity never colour-alone; tabular figures | `components/ui.tsx` |
 | Overview | done | Frontend | API | Verified live in browser | `pages/Overview.tsx` |
-| Live Monitor | done | Frontend | API | Live channels + ECharts, verified | `pages/SensorDetail.tsx` |
+| Live Monitor | done | Frontend | API | Six waveform cards, verified in browser | `pages/Live.tsx` |
 | Signal Analysis (gated) | todo | Signal | throughput model | Refuses out-of-band requests | — |
 | Alarm Center | done | Frontend | alarms | Acknowledge gated by ability | `pages/Alarms.tsx` |
 | Kiosk mode | todo | Frontend | auth roles | Survives reboot | — |

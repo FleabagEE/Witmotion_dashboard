@@ -37,6 +37,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/sensors/{sensorId}/channels', [ReadController::class, 'channels'])->name('sensors.channels');
         Route::get('/sensors/{sensorId}/latest', [ReadController::class, 'latest'])->name('sensors.latest');
         Route::get('/series', [ReadController::class, 'series'])->name('series');
+        Route::get('/series/multi', [ReadController::class, 'multiSeries'])->name('series.multi');
         Route::get('/alarms', [ReadController::class, 'alarms'])->name('alarms.index');
     });
 

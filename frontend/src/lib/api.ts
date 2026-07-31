@@ -62,6 +62,12 @@ export const api = {
       `/series?sensor_id=${encodeURIComponent(sensorId)}&channel_key=${encodeURIComponent(channelKey)}` +
         `&from=${encodeURIComponent(fromIso)}&max_points=${maxPoints}`,
     ),
+  multiSeries: (sensorId: string, channels: string[], seconds: number, maxPoints = 300) =>
+    request<MultiSeries>(
+      `/series/multi?sensor_id=${encodeURIComponent(sensorId)}` +
+        `&channels=${encodeURIComponent(channels.join(','))}` +
+        `&seconds=${seconds}&max_points=${maxPoints}`,
+    ),
   alarms: (unacknowledgedOnly = false) =>
     request<{ data: AlarmRow[] }>(`/alarms${unacknowledgedOnly ? '?unacknowledged_only=1' : ''}`),
   acknowledge: (id: number, note: string) =>
@@ -147,6 +153,22 @@ export interface Series {
   to: string
   resolution: 'raw_bucketed' | 'hourly_rollup'
   data: { t: string; value: number | null; min: number | null; max: number | null; samples: number }[]
+}
+
+export interface SeriesPoint {
+  t: number
+  v: number | null
+  lo: number | null
+  hi: number | null
+}
+
+export interface MultiSeries {
+  sensor_id: string
+  from: string
+  to: string
+  resolution: 'raw_bucketed' | 'hourly_rollup'
+  bucket_seconds: number
+  series: Record<string, SeriesPoint[]>
 }
 
 export interface AlarmRow {

@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react
 import { api, getToken, setToken, type CurrentUser } from './lib/api'
 import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
+import { Live } from './pages/Live'
 import { SensorDetail } from './pages/SensorDetail'
 import { Alarms } from './pages/Alarms'
 
@@ -14,13 +15,14 @@ const queryClient = new QueryClient({
 function Nav({ user, onSignOut }: { user: CurrentUser; onSignOut: () => void }) {
   const { pathname } = useLocation()
   const links = [
-    { to: '/', label: 'Overview' },
+    { to: '/', label: 'Live' },
+    { to: '/system', label: 'System' },
     { to: '/alarms', label: 'Alarms' },
   ]
 
   return (
     <header className="border-b border-line bg-panel">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+      <div className="mx-auto flex max-w-[1800px] items-center justify-between px-4 py-3">
         <div className="flex items-center gap-6">
           <Link to="/" className="text-sm font-semibold tracking-wide">
             QuakeVault
@@ -81,9 +83,10 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Nav user={user} onSignOut={signOut} />
-        <main className="mx-auto max-w-7xl px-4 py-6">
+        <main className="mx-auto max-w-[1800px] px-4 py-5">
           <Routes>
-            <Route path="/" element={<Overview />} />
+            <Route path="/" element={<Live />} />
+            <Route path="/system" element={<Overview />} />
             <Route path="/sensors/:sensorId" element={<SensorDetail />} />
             <Route path="/alarms" element={<Alarms user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />

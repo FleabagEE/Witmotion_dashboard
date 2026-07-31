@@ -222,6 +222,74 @@ class ReadController extends Controller
         ]);
     }
 
+    /**
+     * Several channels over one window, in a single request.
+     *
+     * A waveform card plots three axes together; fetching them separately would
+     * let the traces drift apart in time as each request lands at a slightly
+     * different moment, which on a chart reads as a phase difference that is not
+     * there.
+     */
+    public function multiSeries(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'sensor_id' => ['required', 'string', 'max:80'],
+            'channels' => ['required', 'string', 'max:400'],
+            'seconds' => ['nullable', 'integer', 'min:10', 'max:604800'],
+            'max_points' => ['nullable', 'integer', 'min:10', 'max:2000'],
+        ]);
+
+        $channels = array_values(array_filter(array_map('trim', explode(',', $data['channels']))));
+        if (count($channels) > 12) {
+            return response()->json(['message' => 'at most 12 channels per request'], 422);
+        }
+
+        $seconds = $data['seconds'] ?? 300;
+        $maxPoints = $data['max_points'] ?? 300;
+        $to = now();
+        $from = $to->copy()->subSeconds($seconds);
+        $useRollup = $seconds > 6 * 3600;
+        $bucketSeconds = max(1, (int) ceil($seconds / $maxPoints));
+
+        $series = [];
+        foreach ($channels as $channelKey) {
+            if ($useRollup) {
+                $rows = DB::select(<<<'SQL'
+                    SELECT bucket AS t, avg_value AS value, min_value, max_value
+                    FROM measurements_hourly
+                    WHERE sensor_id = ? AND channel_key = ? AND bucket BETWEEN ? AND ?
+                    ORDER BY bucket LIMIT ?
+                SQL, [$data['sensor_id'], $channelKey, $from, $to, $maxPoints]);
+            } else {
+                $rows = DB::select(<<<'SQL'
+                    SELECT time_bucket(make_interval(secs => ?), time) AS t,
+                           avg(value) AS value, min(value) AS min_value, max(value) AS max_value
+                    FROM measurements
+                    WHERE sensor_id = ? AND channel_key = ? AND time BETWEEN ? AND ?
+                    GROUP BY t ORDER BY t LIMIT ?
+                SQL, [$bucketSeconds, $data['sensor_id'], $channelKey, $from, $to, $maxPoints]);
+            }
+
+            $series[$channelKey] = array_map(fn ($r) => [
+                't' => Carbon::parse($r->t)->valueOf(),
+                'v' => $r->value === null ? null : round((float) $r->value, 6),
+                'lo' => $r->min_value === null ? null : round((float) $r->min_value, 6),
+                'hi' => $r->max_value === null ? null : round((float) $r->max_value, 6),
+            ], $rows);
+        }
+
+        return response()->json([
+            'sensor_id' => $data['sensor_id'],
+            'from' => $from->toIso8601String(),
+            'to' => $to->toIso8601String(),
+            // Stated so a card can say when it is showing averages rather than
+            // samples: an hourly mean flattens exactly the peaks that matter.
+            'resolution' => $useRollup ? 'hourly_rollup' : 'raw_bucketed',
+            'bucket_seconds' => $useRollup ? 3600 : $bucketSeconds,
+            'series' => $series,
+        ]);
+    }
+
     public function alarms(Request $request): JsonResponse
     {
         $query = AlarmEvent::with('definition')->orderByDesc('raised_at');
