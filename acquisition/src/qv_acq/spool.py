@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS spool (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     idempotency_key  TEXT    NOT NULL UNIQUE,
     appliance_id     TEXT    NOT NULL,
+    run_id           TEXT    NOT NULL DEFAULT '',
     sensor_id        TEXT    NOT NULL,
     group_key        TEXT    NOT NULL,
     sequence         INTEGER NOT NULL,
@@ -106,6 +107,13 @@ class Spool:
         # where the machine dies unexpectedly.
         self._db.execute("PRAGMA synchronous=FULL")
         self._db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Additive migrations for spools created by an earlier version."""
+        columns = {row["name"] for row in self._db.execute("PRAGMA table_info(spool)")}
+        if "run_id" not in columns:
+            self._db.execute("ALTER TABLE spool ADD COLUMN run_id TEXT NOT NULL DEFAULT ''")
 
     # -- writing ------------------------------------------------------------
 
@@ -116,13 +124,14 @@ class Spool:
         try:
             self._db.execute(
                 """
-                INSERT INTO spool (idempotency_key, appliance_id, sensor_id, group_key,
+                INSERT INTO spool (idempotency_key, appliance_id, run_id, sensor_id, group_key,
                                    sequence, timestamp_utc, payload, checksum, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     measurement.idempotency_key(),
                     measurement.appliance_id,
+                    measurement.run_id,
                     measurement.sensor_id,
                     measurement.group_key,
                     measurement.sequence,

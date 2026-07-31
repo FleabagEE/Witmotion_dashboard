@@ -58,6 +58,11 @@ class Measurement:
     """One poll of one register group from one sensor."""
 
     appliance_id: str
+    #: Identifies one continuous run of the acquisition service. Sequence numbers
+    #: restart at 1 whenever the service restarts, so without this the
+    #: idempotency key would collide with the previous run's and the spool would
+    #: silently reject fresh measurements as duplicates.
+    run_id: str
     adapter_id: str
     bus_id: str
     sensor_id: str
@@ -88,6 +93,7 @@ class Measurement:
         return {
             "schema_version": SCHEMA_VERSION,
             "appliance_id": self.appliance_id,
+            "run_id": self.run_id,
             "adapter_id": self.adapter_id,
             "bus_id": self.bus_id,
             "sensor_id": self.sensor_id,
@@ -110,7 +116,10 @@ class Measurement:
 
     def idempotency_key(self) -> str:
         """Stable key so replayed batches cannot double-insert."""
-        return f"{self.appliance_id}:{self.sensor_id}:{self.group_key}:{self.sequence}"
+        return (
+            f"{self.appliance_id}:{self.run_id}:{self.sensor_id}:"
+            f"{self.group_key}:{self.sequence}"
+        )
 
 
 def utc_now() -> datetime:

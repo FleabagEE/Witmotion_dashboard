@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import statistics
+import uuid
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -213,6 +214,7 @@ class BusWorker:
         baud: int,
         sensors: Iterable[SensorBinding],
         appliance_id: str,
+        run_id: str,
         sink: Sink,
         timeout: float = 1.0,
         retry: RetryConfig | None = None,
@@ -225,6 +227,7 @@ class BusWorker:
         self.port = port
         self.baud = baud
         self.appliance_id = appliance_id
+        self.run_id = run_id
         self.sink = sink
         self.timeout = timeout
         self.retry = retry or RetryConfig()
@@ -298,6 +301,7 @@ class BusWorker:
 
         return Measurement(
             appliance_id=self.appliance_id,
+            run_id=self.run_id,
             adapter_id=self.adapter_id,
             bus_id=self.bus_id,
             sensor_id=task.binding.sensor_id,
@@ -374,8 +378,11 @@ class BusWorker:
 class AcquisitionEngine:
     """Runs every bus concurrently and funnels measurements to one sink."""
 
-    def __init__(self, appliance_id: str, sink: Sink) -> None:
+    def __init__(self, appliance_id: str, sink: Sink, *, run_id: str | None = None) -> None:
         self.appliance_id = appliance_id
+        # One id per continuous run. Sequence numbers restart at 1 on every
+        # service start; this is what keeps their idempotency keys distinct.
+        self.run_id = run_id or uuid.uuid4().hex
         self.sink = sink
         self.buses: list[BusWorker] = []
         self._stop = asyncio.Event()
@@ -397,6 +404,7 @@ class AcquisitionEngine:
             baud=baud,
             sensors=sensors,
             appliance_id=self.appliance_id,
+            run_id=self.run_id,
             sink=self.sink,
             **kwargs,  # type: ignore[arg-type]
         )
@@ -423,4 +431,8 @@ class AcquisitionEngine:
         self._stop.set()
 
     def stats(self) -> dict[str, object]:
-        return {"appliance_id": self.appliance_id, "buses": [b.stats() for b in self.buses]}
+        return {
+            "appliance_id": self.appliance_id,
+            "run_id": self.run_id,
+            "buses": [b.stats() for b in self.buses],
+        }

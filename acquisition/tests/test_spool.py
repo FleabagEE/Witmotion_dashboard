@@ -22,9 +22,12 @@ from qv_acq.spool import Spool, SpoolCorruption, SpoolingSink, replay
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
-def make_measurement(sequence: int, *, sensor_id: str = "SENSOR-001") -> Measurement:
+def make_measurement(
+    sequence: int, *, sensor_id: str = "SENSOR-001", run_id: str = "run-a"
+) -> Measurement:
     return Measurement(
         appliance_id="QV-EDGE-TEST",
+        run_id=run_id,
         adapter_id="A1",
         bus_id="BUS-001",
         sensor_id=sensor_id,
@@ -155,7 +158,7 @@ i = 0
 while True:
     i += 1
     s.append(Measurement(
-        appliance_id="QV", adapter_id="A1", bus_id="B1", sensor_id="S1",
+        appliance_id="QV", run_id="crash-run", adapter_id="A1", bus_id="B1", sensor_id="S1",
         sensor_model="WTVB01-485", profile_version="1.0.0", slave_id=80,
         group_key="acceleration", sequence=i, timestamp_utc=utc_now(),
         monotonic_ns=time.monotonic_ns(),
@@ -243,3 +246,38 @@ class TestEngineIntegration:
             assert spool.verify() == []
             sequences = [r.sequence for r in spool.pending(limit=1000)]
             assert sequences == list(range(1, len(sequences) + 1))
+
+
+class TestRestartSafety:
+    def test_restarting_the_service_does_not_drop_measurements(self, spool: Spool) -> None:
+        """Regression: sequence numbers restart at 1 on every service start.
+
+        With an idempotency key of appliance:sensor:group:sequence, the first N
+        measurements after a restart collided with the previous run's and were
+        silently rejected as duplicates. Found in production data: 98 real
+        measurements lost across three restarts. The key now includes a run id.
+        """
+        for i in range(1, 21):
+            assert spool.append(make_measurement(i, run_id="run-a")) is True
+
+        # Service restarts: sequence counters go back to 1.
+        for i in range(1, 21):
+            assert spool.append(make_measurement(i, run_id="run-b")) is True, (
+                f"measurement {i} of the new run was rejected as a duplicate"
+            )
+
+        assert spool.total() == 40
+        assert spool.counters().get("duplicates_rejected", 0) == 0
+
+    def test_replay_within_a_run_is_still_idempotent(self, spool: Spool) -> None:
+        """The fix must not weaken deduplication inside a single run."""
+        for i in range(1, 11):
+            spool.append(make_measurement(i, run_id="run-a"))
+        for i in range(1, 11):
+            assert spool.append(make_measurement(i, run_id="run-a")) is False
+        assert spool.total() == 10
+
+    def test_run_id_is_recorded_for_forensics(self, spool: Spool) -> None:
+        spool.append(make_measurement(1, run_id="run-xyz"))
+        row = spool._db.execute("SELECT run_id FROM spool").fetchone()
+        assert row["run_id"] == "run-xyz"

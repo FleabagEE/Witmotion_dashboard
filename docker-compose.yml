@@ -1,0 +1,54 @@
+# Application-tier services for the QuakeVault industrial appliance.
+#
+# Acquisition is NOT here. It runs on the host as a hardened systemd unit
+# (ADR-003) so that restarting, upgrading or breaking anything below keeps the
+# sensors being polled and the measurements spooled to disk.
+#
+# Host Redis already occupies 6379, so ours is published on 6380 to keep the
+# appliance self-contained rather than sharing an instance we do not control.
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: qv-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: quakevault
+      POSTGRES_USER: quakevault
+      # Overridden by .env in any real deployment; the installer generates one.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me-in-env}
+      # Sensor data is append-heavy; give the planner room to keep indexes warm.
+      TIMESCALEDB_TELEMETRY: "off"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - qv_timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quakevault -d quakevault"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: qv-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - qv_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  qv_timescale_data:
+  qv_redis_data:

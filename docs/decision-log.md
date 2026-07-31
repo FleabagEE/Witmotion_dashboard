@@ -144,3 +144,43 @@ capabilities barely overlap the WTVB01's, so the tests that use it fail loudly i
 anything starts assuming one sensor model. Deleting it would leave the capability
 model untested until the next sensor is added - precisely when a regression would
 cost the most.
+
+---
+
+## ADR-010 — Measurement identity includes a run id
+
+**Decision.** The idempotency key is
+`appliance:run_id:sensor:group:sequence`. A run id is minted once per continuous
+acquisition run and carried on every measurement.
+
+**Context.** Sequence numbers restart at 1 whenever the service restarts. With a
+key of `appliance:sensor:group:sequence`, the first measurements after every
+restart collided with the previous run's and were rejected by the spool's UNIQUE
+constraint as duplicates. This was not theoretical: the live spool had already
+lost **98 real measurements** across three restarts, counted under
+`duplicates_rejected` and otherwise invisible.
+
+Alternatives considered. Persisting the last sequence per (sensor, group) and
+resuming from it would work, but adds startup state that can itself be lost or
+corrupted, and a wrong resume silently overwrites history. A timestamp-based key
+is not stable under replay. A run id is stateless, survives crashes, and keeps
+deduplication exact inside a run - which is what replay safety actually needs.
+
+**Cost.** Measurements from different runs can no longer be deduplicated against
+each other. That is correct: they are genuinely different measurements. Anything
+downstream that wants "the latest reading per channel" must order by timestamp,
+not assume sequence numbers are globally comparable.
+
+---
+
+## ADR-011 — Application tier in Docker, one database, Redis on 6380
+
+**Decision.** TimescaleDB and Redis run under Docker Compose, published on
+loopback only. Acquisition stays on the host (ADR-003).
+
+**Context.** The host already runs a Redis on 6379 belonging to another product.
+Sharing it would couple this appliance's queues and cache to software this
+project does not control, so ours is published on 6380 instead.
+
+**Cost.** Two Redis instances on one development machine. On a real appliance
+there is only one, and the port is configuration.
