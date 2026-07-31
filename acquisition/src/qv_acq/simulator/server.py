@@ -52,6 +52,10 @@ class SimulatorServer:
         self._started_at = 0.0
         self.requests_served = 0
         self.requests_dropped = 0
+        #: Every Modbus function code this server has been asked for. Lets a test
+        #: assert that discovery is read-only by observation rather than by
+        #: reading the discovery code and trusting it.
+        self.function_codes_seen: set[int] = set()
 
     @property
     def port(self) -> str:
@@ -116,6 +120,8 @@ class SimulatorServer:
 
             while len(buffer) >= REQUEST_LENGTH:
                 frame = bytes(buffer[:REQUEST_LENGTH])
+                if len(frame) >= 2 and frame[0] in self.devices:
+                    self.function_codes_seen.add(frame[1])
                 response = handle_request(
                     frame,
                     self.devices,

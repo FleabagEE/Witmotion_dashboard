@@ -45,7 +45,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Exclusive port ownership | done | Controls | — | Advisory lock, 3 tests | `portlock.py` |
 | Unified measurement model | done | Architect | capability schema | Schema-versioned envelope | `measurement.py` |
 | Local spool + replay | done | Backend | engine | SIGKILL mid-write + live outage drill | `spool.py` |
-| Discovery + confidence scoring | todo | Controls | engine | Duplicate-ID detection test | — |
+| Discovery + confidence scoring | done | Controls | engine | 21 tests + live hardware | `discovery.py` |
 | systemd units (hardened) | todo | DevSecOps | engine | `systemd-analyze security` | — |
 
 ## Phase 4 — Backend
