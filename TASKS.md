@@ -56,8 +56,10 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Task | Status | Owner role | Depends on | Validation | Result |
 |---|---|---|---|---|---|
 | Laravel skeleton | done | Backend | DB design | Connects to pg18, migrates clean | Laravel 13.23 |
-| Sanctum + roles | todo | Backend | skeleton | Auth feature tests | — |
-| Ingestion endpoint (idempotent) | todo | Backend | API contract | Replay-safety tests | — |
+| Human users + roles | todo | Backend | skeleton | Auth feature tests | — |
+| Ingestion endpoint (idempotent) | done | Backend | API contract | 16 feature tests + live e2e | `IngestService` |
+| Spool forwarder | done | Backend | ingestion | 14 tests + live e2e | `forwarder.py` |
+| Sanctum appliance tokens | done | DevSecOps | skeleton | ingest-only ability enforced | `appliance:token` |
 | TimescaleDB policies | done | Backend | DB design | Compression, retention, rollup registered | verified in catalog |
 | Alarm engine | todo | Backend | ingestion | Hysteresis/debounce tests | — |
 | Notifications | todo | Backend | alarms | Delivery-status tests | — |
