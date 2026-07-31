@@ -14,9 +14,9 @@ domain-specific to seismic monitoring. The target stack is PostgreSQL with
 TimescaleDB, Sanctum, and Mosquitto. Grafting would have meant either bending
 the spec or destabilising a product in service.
 
-**Cost.** No reuse by inheritance. Proven patterns (systemd hardening, deploy
-scripts, kiosk mode, audit logging) are ported deliberately, file by file, with
-attribution in this log.
+**Cost.** No reuse of any kind. This is a clean-room build: no code, schema,
+container, database, or runtime is shared with any other product, and none is
+copied from one. Everything the appliance needs is written here.
 
 ---
 

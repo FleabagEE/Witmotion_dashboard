@@ -18,6 +18,14 @@ verification_notes: >-
   engineering integers rather than full-scale ratios; confirm by exciting the
   sensor and checking that velocity tracks displacement times frequency.
 
+  SUSPECTED WRONG - velocity scale. Simulation at scale 1.0 gives 1 mm/s
+  resolution. ISO 10816 zone boundaries are 1.12, 2.8 and 7.1 mm/s, so a
+  1 mm/s step cannot separate "good" from "unsatisfactory" and no vendor would
+  ship that for condition monitoring. Expect the true scale to be finer, most
+  likely 0.1 mm/s per count. Confirm during commissioning by comparing the
+  reading against a calibrated reference or by checking whether a slow change in
+  excitation moves the register in steps of more than one count.
+
 serial:
   baud: 9600
   default_slave_id: 0x50

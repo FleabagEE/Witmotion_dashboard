@@ -22,6 +22,9 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Register decoder | done | Backend | — | 11 unit tests | `decode.py` |
 | Bus throughput model | done | Controls | — | Hand-calc cross-check | `throughput.py` |
 | Read-only probe tool | done | Controls | decoder | Compiles; API verified | `tools/probe.py` |
+| Register encoder (inverse of decoder) | done | Backend | decoder | 8 round-trip tests | `encode.py` |
+| Modbus RTU simulator (both sensors) | done | Controls | profiles, encoder | 18 tests, end-to-end over pty | `simulator/` |
+| Profile-driven reader + quality flags | done | Backend | decoder | End-to-end vs simulator | `client.py` |
 | Normalised measurement schema | todo | Architect | capability schema | JSON-schema validation | — |
 | MQTT topic + payload schema | todo | Architect | measurement schema | Schema tests | — |
 | Ingestion API contract | todo | Backend | measurement schema | OpenAPI + contract tests | — |
@@ -34,7 +37,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Create `quakevault-acq` service account | blocked | DevSecOps | root access | Account exists, in `dialout` | Needs operator |
 | Verify register maps on hardware | blocked | Controls | dialout, probe | Transcript in register-maps.md | Gate for alarms |
 | udev rules + stable adapter identity | todo | DevSecOps | service account | Survives replug and reboot | — |
-| Modbus RTU simulator (both sensors) | todo | Controls | profiles | Acquisition runs with no hardware | — |
+| CRC-level fault injection in simulator | done | QA | simulator | Corrupt frames rejected, not decoded | `rtu.py` |
 | Async acquisition engine | todo | Controls | simulator | Soak against simulator | — |
 | Local spool + replay | todo | Backend | engine | Kill -9 mid-write, replay intact | — |
 | Discovery + confidence scoring | todo | Controls | engine | Duplicate-ID detection test | — |
