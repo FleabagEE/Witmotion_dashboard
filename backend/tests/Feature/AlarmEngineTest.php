@@ -563,4 +563,85 @@ class AlarmEngineTest extends TestCase
         $this->assertNotNull($event);
         $this->assertSame('critical', $event->level);
     }
+
+    // ---- threshold governance -------------------------------------------
+
+    public function test_structural_thresholds_start_unconfirmed(): void
+    {
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset);
+
+        // The shipped values are transcribed from working knowledge, not from
+        // the copyrighted standard text. Nobody has checked them yet.
+        $this->assertFalse($definitions[0]->thresholdsConfirmed());
+    }
+
+    public function test_alarms_from_unconfirmed_thresholds_are_provisional(): void
+    {
+        $this->evaluator->provisionStructuralDefaults($this->asset);
+        $this->feedWithFrequency(9.0, 5.0);
+
+        $event = $this->openEvent();
+        $this->assertTrue($event->provisional);
+        // Visible on a dashboard, but must never page anybody: nobody has
+        // verified the number it fired against.
+        $this->assertFalse($event->isActionable());
+    }
+
+    public function test_confirming_thresholds_makes_new_alarms_actionable(): void
+    {
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset);
+        $definitions[0]->confirm('J. Engineer', 'DIN 4150-3:2016-12 Table 1', 'checked against site copy');
+
+        $this->feedWithFrequency(9.0, 5.0);
+
+        $event = $this->openEvent();
+        $this->assertFalse($event->provisional);
+        $this->assertTrue($event->isActionable());
+    }
+
+    public function test_confirmation_records_who_and_against_what(): void
+    {
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset);
+        $definition = $definitions[0]->confirm('J. Engineer', 'DIN 4150-3:2016-12 Table 1');
+
+        $this->assertSame('J. Engineer', $definition->thresholds_confirmed_by);
+        $this->assertSame('DIN 4150-3:2016-12 Table 1', $definition->thresholds_reference);
+        $this->assertNotNull($definition->thresholds_confirmed_at);
+    }
+
+    public function test_an_event_keeps_the_provisional_status_it_was_raised_under(): void
+    {
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset);
+        $this->feedWithFrequency(9.0, 5.0);
+        $this->assertTrue($this->openEvent()->provisional);
+
+        // Confirming later must not retroactively make a past alarm look
+        // authoritative. What mattered is what was known when it fired.
+        $definitions[0]->confirm('J. Engineer', 'DIN 4150-3:2016-12 Table 1');
+
+        $this->assertTrue($this->openEvent()->fresh()->provisional);
+    }
+
+    public function test_liveness_thresholds_are_self_confirming(): void
+    {
+        $definition = $this->evaluator->provisionLivenessDefaults($this->sensor);
+
+        // Derived from this appliance's own poll configuration, not from an
+        // external document, so there is nothing for a human to check it against.
+        $this->assertTrue($definition->thresholdsConfirmed());
+        $this->assertSame('system (derived)', $definition->thresholds_confirmed_by);
+        $this->assertStringContainsString('slowest configured channel', $definition->thresholds_reference);
+    }
+
+    public function test_shelved_events_are_not_actionable(): void
+    {
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset);
+        $definitions[0]->confirm('J. Engineer', 'DIN 4150-3');
+        $this->feedWithFrequency(9.0, 5.0);
+
+        $event = $this->openEvent();
+        $event->update(['shelved_until' => now()->addHour()]);
+
+        $this->assertFalse($event->fresh()->isActionable());
+    }
 }

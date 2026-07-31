@@ -267,3 +267,35 @@ recorded in `known-limitations.md`:
 The transcribed tables ship as `candidate`, never `verified`, until checked
 against the standard text - the same gate the register maps pass through, for the
 same reason.
+
+---
+
+## ADR-015 — Thresholds must be confirmed by a named person before they notify
+
+**Decision.** Alarm definitions carry `thresholds_confirmed_at`,
+`thresholds_confirmed_by` and `thresholds_reference`. Until a named person
+records that they checked the numbers against a real source, alarms raised from
+those thresholds are marked `provisional`: shown on the dashboard, never sent to
+anybody. An event keeps the status it was raised under, so confirming later does
+not retroactively make a past alarm look authoritative.
+
+**Context.** DIN 4150-3 and BS 7385-2 are copyrighted documents that must be
+purchased, and this project does not hold them. The shipped guideline values are
+transcribed from working knowledge and cannot be verified against the source.
+That is not a reason to ship them silently as though they were authoritative:
+mistaking `sensitive` for `commercial` would be a factor of seven at low
+frequency, and a listed building would sit unmonitored until it was seven times
+past the damage threshold.
+
+The register-map gate (ADR-005) already caught two errors of exactly this kind on
+this project. The same discipline applies to numbers that decide whether a
+building is at risk.
+
+Liveness thresholds are exempt and self-confirm, because they derive from this
+appliance's own poll configuration rather than an external document. There is
+nothing for a human to check them against.
+
+**Cost.** A fresh install raises no actionable alarms until somebody signs off.
+That is the intended behaviour: it forces the question of who owns the numbers to
+be answered before the product is relied upon, rather than after an incident.
+`alarms:confirm-thresholds --list` shows exactly what is outstanding.

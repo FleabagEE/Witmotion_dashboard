@@ -178,6 +178,11 @@ class AlarmEvaluator
                 'level' => 'normal',
                 'peak_level' => 'normal',
                 'state' => 'active',
+                // Stamped at creation from the definition in force. An event
+                // raised on unconfirmed numbers stays marked as such for its
+                // whole life, even if the thresholds are confirmed later - what
+                // matters is what was known when it fired.
+                'provisional' => ! $definition->thresholdsConfirmed(),
                 'unit' => $unit ?? $definition->unit,
                 'raised_at' => $at,
             ]);
@@ -406,6 +411,16 @@ class AlarmEvaluator
                 'enabled' => true,
                 'requires_verified_profile' => false,
                 'source' => 'liveness_derived',
+                // Self-confirming: these numbers come from this appliance's own
+                // poll configuration, not from an external standard, so their
+                // provenance is checkable in the config file. Nothing for a
+                // human to verify against a document that does not exist.
+                'thresholds_confirmed_at' => now(),
+                'thresholds_confirmed_by' => 'system (derived)',
+                'thresholds_reference' => sprintf(
+                    'Derived from the slowest configured channel rate (%.3f Hz) for sensor %s',
+                    $slowestHz, $sensor->sensor_id,
+                ),
                 'parameters' => ['slowest_hz' => $slowestHz],
             ],
         );

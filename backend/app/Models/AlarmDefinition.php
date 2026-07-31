@@ -12,13 +12,40 @@ class AlarmDefinition extends Model
         'condition_type', 'unit', 'advisory_at', 'warning_at', 'critical_at',
         'hysteresis', 'persistence_seconds', 'clear_seconds', 'debounce_seconds',
         'latching', 'enabled', 'requires_verified_profile', 'source', 'parameters',
+        'thresholds_confirmed_at', 'thresholds_confirmed_by', 'thresholds_reference',
+        'thresholds_note',
     ];
 
     protected $casts = [
         'advisory_at' => 'float', 'warning_at' => 'float', 'critical_at' => 'float',
         'hysteresis' => 'float', 'latching' => 'boolean', 'enabled' => 'boolean',
         'requires_verified_profile' => 'boolean', 'parameters' => 'array',
+        'thresholds_confirmed_at' => 'datetime',
     ];
+
+    /**
+     * Whether a named person has checked these numbers against a real source.
+     *
+     * The shipped structural values are transcribed from working knowledge, not
+     * from the copyrighted standard text. Until somebody who owns the risk
+     * confirms them, alarms they produce are provisional and never notify.
+     */
+    public function thresholdsConfirmed(): bool
+    {
+        return $this->thresholds_confirmed_at !== null;
+    }
+
+    public function confirm(string $by, string $reference, ?string $note = null): self
+    {
+        $this->forceFill([
+            'thresholds_confirmed_at' => now(),
+            'thresholds_confirmed_by' => $by,
+            'thresholds_reference' => $reference,
+            'thresholds_note' => $note,
+        ])->save();
+
+        return $this;
+    }
 
     public function events(): HasMany
     {

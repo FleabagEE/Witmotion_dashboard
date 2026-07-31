@@ -12,13 +12,14 @@ class AlarmEvent extends Model
 
     protected $fillable = [
         'alarm_definition_id', 'sensor_id', 'asset_id', 'channel_key',
-        'level', 'peak_level', 'state', 'trigger_value', 'peak_value', 'threshold', 'unit',
+        'level', 'peak_level', 'state', 'provisional', 'trigger_value', 'peak_value', 'threshold', 'unit',
         'raised_at', 'last_evaluated_at', 'last_changed_at', 'cleared_at',
         'candidate_level', 'candidate_since',
         'acknowledged_at', 'acknowledged_by', 'acknowledgement_note', 'shelved_until', 'metadata',
     ];
 
     protected $casts = [
+        'provisional' => 'boolean',
         'trigger_value' => 'float', 'peak_value' => 'float', 'threshold' => 'float',
         'raised_at' => 'datetime', 'last_evaluated_at' => 'datetime',
         'last_changed_at' => 'datetime', 'cleared_at' => 'datetime',
@@ -44,6 +45,12 @@ class AlarmEvent extends Model
     public function isAcknowledged(): bool
     {
         return $this->acknowledged_at !== null;
+    }
+
+    /** Whether this event may notify anybody, as opposed to merely be displayed. */
+    public function isActionable(): bool
+    {
+        return ! $this->provisional && ! $this->isShelved();
     }
 
     public function isShelved(): bool
