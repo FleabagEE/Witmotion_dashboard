@@ -8,11 +8,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Asset extends Model
 {
     protected $fillable = [
-        'site_id', 'slug', 'name', 'asset_type', 'iso_10816_class',
+        'site_id', 'slug', 'name', 'asset_type', 'monitoring_domain',
+        'iso_10816_class', 'vibration_standard', 'structure_class',
+        'measurement_position', 'construction_type', 'storeys', 'year_built',
         'rated_power_kw', 'nominal_rpm', 'status', 'metadata',
     ];
 
     protected $casts = ['metadata' => 'array', 'rated_power_kw' => 'float'];
+
+    public function isStructural(): bool
+    {
+        return $this->monitoring_domain === 'structural';
+    }
 
     public function sensors(): HasMany
     {

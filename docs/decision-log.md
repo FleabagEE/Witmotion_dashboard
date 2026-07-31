@@ -226,3 +226,44 @@ survives a restart rather than resetting its countdown.
 A failed read never alarms. A null value with 'bad' quality is not a low
 reading - nothing was measured. Sensor liveness is a separate condition type, so
 that a dead sensor reports as dead rather than as a healthy machine.
+
+---
+
+## ADR-014 — Structural monitoring, not machine condition monitoring
+
+**Decision.** The deployment target is structural: sensors mounted on buildings
+and walls. ISO 10816 is therefore the wrong standard, and assets declare a
+`monitoring_domain` of `structural` or `machinery` rather than the code assuming
+one. Structural limits come from DIN 4150-3 / BS 7385-2.
+
+**Context.** Confirmed by the operator on 2026-07-31 after the first sensor was
+mounted on a wall. The two families answer different questions and are not
+interchangeable: ISO 10816 asks whether a machine is healthy, using RMS velocity
+graded by machine class; DIN 4150-3 asks whether a building will be damaged,
+using peak particle velocity graded by structure type and, crucially, by
+frequency. The same velocity is far more damaging at 3 Hz than at 80 Hz, so a
+single threshold cannot express the standard.
+
+The ISO 10816 support is kept, not deleted: it is correct for machinery, and the
+appliance is meant to serve both.
+
+**Cost.** Three things now need answering that machine monitoring did not raise,
+recorded in `known-limitations.md`:
+
+1. **The standards require all three axes.** Both evaluate the largest of three
+   orthogonal components. The confirmed WTVB01-485 defect leaves velocity on the
+   X axis only, so a compliant assessment cannot be produced with this hardware
+   as it stands. This turns the defect from an inconvenience into a blocker for
+   the stated use case.
+2. **PPV is a peak, not an average.** The WTVB01 reports an aggregated velocity
+   whose relationship to peak is not documented. Converting between them needs an
+   assumption about waveform shape that transient events - blasting, piling,
+   passing traffic - violate precisely when the measurement matters most.
+3. **Damage limits are not complaint limits.** These values are cosmetic-damage
+   guidelines. Occupants perceive vibration far below them, so a building can be
+   generating complaints while every alarm reads green. Human response is a
+   different standard again (BS 6472 / ISO 2631).
+
+The transcribed tables ship as `candidate`, never `verified`, until checked
+against the standard text - the same gate the register maps pass through, for the
+same reason.

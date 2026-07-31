@@ -69,12 +69,34 @@ factors per axis. Those come from the sensor's own high-rate sampling, so they
 are not constrained by the polling ceiling above. Condition monitoring runs on
 those; the polling limit only constrains what we can reconstruct ourselves.
 
-## 3. HWT901B-485 — retired
+## 3. Structural monitoring: what this hardware cannot currently claim
+
+The deployment target is structural (ADR-014), governed by DIN 4150-3 and
+BS 7385-2. Two hardware facts limit what may honestly be claimed against them.
+
+**Single axis.** Both standards evaluate the maximum of three orthogonal
+component velocities. The WTVB01-485 in hand reports vibration velocity on the X
+axis only - a confirmed device defect, see `register-maps.md`. A compliant
+assessment cannot be produced until that is resolved with the manufacturer or a
+working unit.
+
+**Aggregate velocity, not peak.** The standards are defined on peak particle
+velocity. The WTVB01 reports an aggregated value whose relationship to peak is
+not documented. Any comparison against a guideline value is approximate, and
+transient events - blasting, piling, traffic - are exactly the case where the
+aggregate underestimates the peak.
+
+**Damage is not annoyance.** DIN 4150-3 values are cosmetic-damage thresholds.
+Occupants notice vibration far below them, so a building can generate complaints
+while every alarm reads green. Human comfort is BS 6472 / ISO 2631 and is not
+implemented.
+
+## 4. HWT901B-485 — retired
 
 Removed from the product on 2026-07-31 (ADR-009). Any limitation previously
 listed here no longer applies to what ships.
 
-## 4. Derived translational velocity and displacement
+## 5. Derived translational velocity and displacement
 
 Integrating acceleration accumulates error without bound. Where offered, the
 feature is optional, off by default, labelled `derived`, and stored with full
@@ -82,26 +104,26 @@ provenance (source channel, filter parameters, integration method, window,
 processing version). Derived values never share an axis or a colour with native
 values, and never feed an alarm that is presented as a native measurement.
 
-## 5. Non-uniform sampling also affects alarms
+## 6. Non-uniform sampling also affects alarms
 
 Windowed RMS, rate-of-change, and band-energy alarms weight samples by count,
 not elapsed time. With jittered polling this biases results. The engine uses
 time-weighted aggregation and records the effective sample count per window;
 windows with excessive gaps are marked degraded rather than evaluated.
 
-## 6. Single-adapter ownership
+## 7. Single-adapter ownership
 
 Exactly one acquisition process owns a serial port. Two processes on one RS-485
 bus interleave frames and produce CRC errors that look like wiring faults. This
 is enforced with an advisory lock on the device node.
 
-## 7. Bus wiring is outside software control
+## 8. Bus wiring is outside software control
 
 CRC error rates are reported but cannot be fixed in software. Termination
 (120 ohm at both ends), biasing, cable length, and grounding dominate RS-485
 reliability. The troubleshooting guide leads with wiring, not configuration.
 
-## 8. Hardware currently in the field
+## 9. Hardware currently in the field
 
 - Bridge chip is a **CH340** (`1a86:7523`). Adequate for commissioning; for a
   commercial appliance prefer a galvanically isolated FTDI FT232-based adapter.
