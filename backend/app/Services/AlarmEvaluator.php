@@ -124,7 +124,11 @@ class AlarmEvaluator
         }
 
         $limit = StructuralVibration::limitFor(
-            (string) ($parameters['standard'] ?? ''),
+            StructuralVibration::tableKey(
+                (string) ($parameters['standard'] ?? ''),
+                (string) ($parameters['position'] ?? 'foundation'),
+                (string) ($parameters['duration'] ?? 'transient'),
+            ),
             (string) ($parameters['structure_class'] ?? ''),
             (float) $frequency,
             (string) ($parameters['position'] ?? 'foundation'),
@@ -428,54 +432,77 @@ class AlarmEvaluator
     }
 
     /**
-     * Create structural vibration alarms for an asset from its governing
-     * standard, structure class and measurement position.
+     * Provision structural alarms for an asset, one per applicable duration.
      *
-     * The guideline value itself is the damage-risk threshold, so it is mapped
-     * to critical. Advisory and warning at 50% and 75% are an operational
-     * convenience of this product, not part of the standard - recorded in
-     * parameters so nobody mistakes them for published values.
+     * A building exposed to both blasting and traffic needs both evaluated:
+     * DIN 4150-3 gives separate, much stricter limits for continuous vibration,
+     * because a structure tolerates one blast far better than months of traffic.
+     * Only combinations the standard actually tabulates are created - it defines
+     * continuous limits for the topmost floor only, and inventing a foundation
+     * value would be worse than having none.
+     *
+     * @return array<int, AlarmDefinition>
      */
-    public function provisionStructuralDefaults(Asset $asset): ?AlarmDefinition
+    public function provisionStructuralDefaults(Asset $asset): array
     {
         $standard = $asset->vibration_standard;
         $class = $asset->structure_class;
         $position = $asset->measurement_position ?: 'foundation';
 
         if ($standard === null || $class === null) {
-            return null;
-        }
-        // Probe the table at a mid-band frequency purely to confirm the
-        // standard/class pair is known; the real limit is resolved per sample
-        // from the measured dominant frequency.
-        if (StructuralVibration::limitFor($standard, $class, 10.0, $position) === null) {
-            return null;
+            return [];
         }
 
+        $created = [];
+        foreach (['transient', 'long_term'] as $duration) {
+            if (StructuralVibration::rejectCombination($standard, $class, $position, $duration) !== null) {
+                continue;
+            }
+            $created[] = $this->structuralDefinition($asset, $standard, $class, $position, $duration);
+        }
+
+        return $created;
+    }
+
+    private function structuralDefinition(
+        Asset $asset,
+        string $standard,
+        string $class,
+        string $position,
+        string $duration,
+    ): AlarmDefinition {
+        $transient = $duration === 'transient';
+
         return AlarmDefinition::updateOrCreate(
-            ['key' => "structural:asset:{$asset->id}"],
+            ['key' => "structural:asset:{$asset->id}:{$duration}"],
             [
-                'name' => "Structural vibration - {$asset->name}",
+                'name' => sprintf(
+                    'Structural vibration (%s) - %s',
+                    $transient ? 'transient' : 'continuous', $asset->name,
+                ),
                 'description' => sprintf(
-                    '%s, %s, measured at %s. Limits are frequency dependent and resolved per '
+                    '%s, %s structure, measured at %s, %s vibration. Limits are resolved per '
                     .'sample from the measured dominant frequency. Standard tables are %s.',
-                    strtoupper(str_replace('_', ' ', $standard)), $class, $position,
+                    strtoupper(str_replace('_', ' ', $standard)), $class,
+                    str_replace('_', ' ', $position),
+                    $transient ? 'short-term / transient' : 'long-term / continuous',
                     StructuralVibration::STATUS,
                 ),
                 'asset_id' => $asset->id,
                 'quantity' => 'vibration_velocity',
                 'condition_type' => 'structural_ppv',
                 'unit' => 'mm/s',
-                // Thresholds are computed per sample, so the static columns stay
-                // null: a fixed number here would be wrong at most frequencies.
                 'advisory_at' => null,
                 'warning_at' => null,
                 'critical_at' => null,
                 'hysteresis' => 0.0,
-                'persistence_seconds' => 0,
-                'clear_seconds' => 30,
-                'debounce_seconds' => 5,
-                'latching' => true,
+                // A transient event is over in seconds, so it must raise at once
+                // and latch. A continuous condition should be sustained before it
+                // is announced, and may clear on its own once it stops.
+                'persistence_seconds' => $transient ? 0 : 300,
+                'clear_seconds' => $transient ? 30 : 600,
+                'debounce_seconds' => $transient ? 5 : 60,
+                'latching' => $transient,
                 'enabled' => true,
                 'requires_verified_profile' => true,
                 'source' => 'structural_standard',
@@ -483,6 +510,7 @@ class AlarmEvaluator
                     'standard' => $standard,
                     'structure_class' => $class,
                     'position' => $position,
+                    'duration' => $duration,
                     'level_fractions' => ['advisory' => 0.5, 'warning' => 0.75, 'critical' => 1.0],
                     'standard_tables_status' => StructuralVibration::STATUS,
                 ],

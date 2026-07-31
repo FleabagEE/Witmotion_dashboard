@@ -150,6 +150,57 @@ final class StructuralVibration
         return $last[2];
     }
 
+    /**
+     * Whether a standard / class / position / duration combination exists.
+     *
+     * Not every combination is defined. DIN 4150-3 tabulates continuous
+     * vibration for the topmost floor only, so asking for a long-term limit at
+     * the foundation has no answer in the standard - and inventing one would be
+     * worse than refusing.
+     *
+     * @return string|null null if valid, otherwise the reason it is not
+     */
+    public static function rejectCombination(
+        string $standard,
+        string $class,
+        string $position,
+        string $duration,
+    ): ?string {
+        if (! in_array($standard, ['din4150_3', 'bs7385_2'], true)) {
+            return "unknown standard '{$standard}'";
+        }
+        if (! in_array($class, self::classesFor($standard), true)) {
+            return "'{$class}' is not a structure class of ".strtoupper($standard);
+        }
+        if (! in_array($position, ['foundation', 'top_floor'], true)) {
+            return "unknown measurement position '{$position}'";
+        }
+        if (! in_array($duration, ['transient', 'long_term'], true)) {
+            return "unknown duration '{$duration}'";
+        }
+        if ($duration === 'long_term') {
+            if ($standard !== 'din4150_3') {
+                return 'only DIN 4150-3 tabulates continuous vibration limits';
+            }
+            if ($position !== 'top_floor') {
+                return 'DIN 4150-3 gives continuous-vibration limits for the topmost floor '
+                    .'only; there is no tabulated foundation value';
+            }
+        }
+
+        return null;
+    }
+
+    /** Resolve the table key for a standard, position and duration. */
+    public static function tableKey(string $standard, string $position, string $duration): string
+    {
+        if ($standard === 'din4150_3' && $duration === 'long_term') {
+            return 'din4150_3_long_term';
+        }
+
+        return $standard;
+    }
+
     public static function classesFor(string $standard): array
     {
         return match ($standard) {

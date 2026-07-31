@@ -383,9 +383,10 @@ class AlarmEngineTest extends TestCase
 
     public function test_structural_defaults_are_provisioned_from_the_standard(): void
     {
-        $definition = $this->evaluator->provisionStructuralDefaults($this->asset);
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset);
 
-        $this->assertNotNull($definition);
+        $this->assertCount(1, $definitions, 'foundation has no continuous-vibration table');
+        $definition = $definitions[0];
         $this->assertSame('structural_ppv', $definition->condition_type);
         $this->assertSame('din4150_3', $definition->parameters['standard']);
         // Static thresholds stay null: a fixed number would be wrong at most
@@ -397,7 +398,7 @@ class AlarmEngineTest extends TestCase
     public function test_an_asset_without_a_standard_gets_no_alarm(): void
     {
         $this->asset->update(['vibration_standard' => null, 'structure_class' => null]);
-        $this->assertNull($this->evaluator->provisionStructuralDefaults($this->asset->fresh()));
+        $this->assertSame([], $this->evaluator->provisionStructuralDefaults($this->asset->fresh()));
     }
 
     public function test_the_same_velocity_alarms_at_low_frequency_but_not_high(): void
@@ -453,10 +454,17 @@ class AlarmEngineTest extends TestCase
         // 5 mm/s limit there; here it is 53% of the limit, so advisory.
         // Measurement position is not a detail either.
         $this->feedWithFrequency(8.0, 5.0);
-        $event = $this->openEvent();
-        $this->assertNotNull($event);
-        $this->assertSame('advisory', $event->level);
-        $this->assertEqualsWithDelta(7.5, $event->threshold, 1e-9);
+
+        // A top floor has two definitions - transient and continuous - so the
+        // transient one must be selected rather than whichever was created last.
+        $transient = AlarmEvent::whereHas(
+            'definition',
+            fn ($q) => $q->where('key', 'like', '%:transient'),
+        )->orderByDesc('id')->first();
+
+        $this->assertNotNull($transient);
+        $this->assertSame('advisory', $transient->level);
+        $this->assertEqualsWithDelta(7.5, $transient->threshold, 1e-9);
     }
 
     public function test_structural_alarms_latch(): void
@@ -471,5 +479,88 @@ class AlarmEngineTest extends TestCase
         $this->feedWithFrequency(0.1, 5.0, 10);
         $this->assertSame('critical', $this->openEvent()->level);
         $this->assertSame('active', $this->openEvent()->state);
+    }
+
+    // ---- the full matrix -------------------------------------------------
+
+    public function test_top_floor_gets_both_transient_and_continuous_alarms(): void
+    {
+        $this->asset->update(['measurement_position' => 'top_floor']);
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset->fresh());
+
+        $durations = array_map(fn ($d) => $d->parameters['duration'], $definitions);
+        sort($durations);
+        $this->assertSame(['long_term', 'transient'], $durations);
+    }
+
+    public function test_continuous_limits_are_far_stricter_and_do_not_latch(): void
+    {
+        $this->asset->update(['measurement_position' => 'top_floor']);
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset->fresh());
+
+        $transient = collect($definitions)->firstWhere(fn ($d) => $d->parameters['duration'] === 'transient');
+        $continuous = collect($definitions)->firstWhere(fn ($d) => $d->parameters['duration'] === 'long_term');
+
+        // A blast is over in seconds and must latch to stay visible; a
+        // continuous condition should be sustained before it is announced.
+        $this->assertTrue($transient->latching);
+        $this->assertFalse($continuous->latching);
+        $this->assertSame(0, $transient->persistence_seconds);
+        $this->assertGreaterThan(0, $continuous->persistence_seconds);
+    }
+
+    public function test_every_din_class_and_position_is_provisionable(): void
+    {
+        foreach (['commercial', 'residential', 'sensitive'] as $class) {
+            foreach (['foundation', 'top_floor'] as $position) {
+                $this->asset->update([
+                    'vibration_standard' => 'din4150_3',
+                    'structure_class' => $class,
+                    'measurement_position' => $position,
+                ]);
+                $definitions = $this->evaluator->provisionStructuralDefaults($this->asset->fresh());
+                $expected = $position === 'top_floor' ? 2 : 1;
+                $this->assertCount($expected, $definitions, "{$class} at {$position}");
+            }
+        }
+    }
+
+    public function test_every_bs7385_class_is_provisionable(): void
+    {
+        foreach (['reinforced', 'unreinforced'] as $class) {
+            $this->asset->update([
+                'vibration_standard' => 'bs7385_2',
+                'structure_class' => $class,
+                'measurement_position' => 'foundation',
+            ]);
+            $definitions = $this->evaluator->provisionStructuralDefaults($this->asset->fresh());
+            // BS 7385-2 tabulates transient values only.
+            $this->assertCount(1, $definitions, $class);
+            $this->assertSame('transient', $definitions[0]->parameters['duration']);
+        }
+    }
+
+    public function test_mismatched_class_and_standard_is_refused(): void
+    {
+        // 'residential' belongs to DIN 4150-3, not BS 7385-2.
+        $this->asset->update(['vibration_standard' => 'bs7385_2', 'structure_class' => 'residential']);
+        $this->assertSame([], $this->evaluator->provisionStructuralDefaults($this->asset->fresh()));
+    }
+
+    public function test_continuous_alarm_uses_the_stricter_table(): void
+    {
+        $this->asset->update(['measurement_position' => 'top_floor']);
+        $definitions = $this->evaluator->provisionStructuralDefaults($this->asset->fresh());
+        $continuous = collect($definitions)->firstWhere(fn ($d) => $d->parameters['duration'] === 'long_term');
+
+        // Residential continuous top-floor limit is 5 mm/s, versus 15 transient.
+        // 6 mm/s is therefore past the continuous guideline entirely.
+        AlarmDefinition::whereKeyNot($continuous->id)->delete();
+        $this->feedWithFrequency(6.0, 20.0);
+        $this->feedWithFrequency(6.0, 20.0, 400);   // outlast the 300 s persistence
+
+        $event = $this->openEvent();
+        $this->assertNotNull($event);
+        $this->assertSame('critical', $event->level);
     }
 }

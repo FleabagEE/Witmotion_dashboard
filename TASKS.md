@@ -66,6 +66,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Sensor liveness alarms | done | Backend | alarm engine | 7 tests + live failure drill | `alarms:sweep` |
 | Alarm evaluation on ingest | done | Backend | alarm engine | Wired outside the ingest transaction | `IngestService` |
 | Structural standards (DIN/BS) | done | Signal | alarm engine | 15 tests, frequency-interpolated | `StructuralVibration` |
+| Full class/position/duration matrix | done | Signal | standards | Every valid combination provisionable | 36 alarm tests |
 | Verify DIN 4150-3 / BS 7385-2 tables | blocked | Signal | standard text | Promote candidate -> verified | Needs standard |
 | Rate-of-change and baseline alarms | todo | Signal | alarm engine | Needs occupied-building baseline | — |
 | Notifications | todo | Backend | alarms | Delivery-status tests | — |
