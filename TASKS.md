@@ -34,9 +34,13 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 | Task | Status | Owner role | Depends on | Validation | Result |
 |---|---|---|---|---|---|
-| Create `quakevault-acq` service account | blocked | DevSecOps | root access | Account exists, in `dialout` | Needs operator |
-| Verify register maps on hardware | blocked | Controls | dialout, probe | Transcript in register-maps.md | Gate for alarms |
-| udev rules + stable adapter identity | todo | DevSecOps | service account | Survives replug and reboot | — |
+| Create `quakevault-acq` service account | done | DevSecOps | root access | Account exists, opens port | uid 995, dialout only |
+| udev stable adapter naming | done | DevSecOps | service account | Alias resolves after trigger | `/dev/quakevault-rs485-a` |
+| Verify WTVB01-485 register map | done | Controls | dialout, probe, manual | Manual V260508 + hardware, 20 fixtures | **verified** |
+| Verify HWT901B-485 register map | blocked | Controls | sensor on bus | Transcript in register-maps.md | Needs wiring |
+| Resolve VY/VZ/DY/DZ reading zero | todo | Controls | second unit | Compare against a 2nd WTVB01 | Open issue |
+| Model 0x47-0x6A statistical features | todo | Signal | manual 10.4.11-10.4.17 | Fixtures per channel | — |
+
 | CRC-level fault injection in simulator | done | QA | simulator | Corrupt frames rejected, not decoded | `rtu.py` |
 | Async acquisition engine | todo | Controls | simulator | Soak against simulator | — |
 | Local spool + replay | todo | Backend | engine | Kill -9 mid-write, replay intact | — |
@@ -79,7 +83,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 ## Blocked — operator action required
 
-1. `sudo usermod -aG dialout quakelogic` (or create `quakevault-acq`) — nothing
-   can open `/dev/ttyUSB0` until this lands. Blocks register verification, which
-   in turn blocks every alarm path.
-2. Confirm whether an HWT901B-485 is physically available for commissioning.
+1. Wire the HWT901B-485 to the bus at a slave address other than 0x50, so its
+   register map can be verified and multi-drop exercised.
+2. Investigate VY/VZ/DY/DZ reading exactly zero on the WTVB01-485 (see
+   docs/register-maps.md). Ideally compare against a second unit.

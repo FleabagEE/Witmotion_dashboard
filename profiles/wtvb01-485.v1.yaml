@@ -1,30 +1,28 @@
 schema_version: "1.0"
-profile_version: "0.1.0"
+profile_version: "1.0.0"
 manufacturer: WitMotion
 model: WTVB01-485
 protocol: modbus_rtu
 
-# UNVERIFIED. The addresses below are a starting hypothesis only. They have not
-# been confirmed against the WTVB01-485 register table or the connected unit, and
-# the acquisition engine will refuse to drive alarms from this profile until
-# verification_status is raised to "verified" by tools/probe.py plus a signed-off
-# entry in docs/register-maps.md.
-verification_status: unverified
+# VERIFIED against the manufacturer register table AND the connected unit.
+# Source: "WTVB01-485 Datasheet and User Guide", document V260508, section 10.3
+# (register address table) and 10.4 (per-register scaling formulas).
+# Device firmware package: Version 10059.
+verification_status: verified
 verification_notes: >-
-  Hypothesis pending hardware confirmation. Run tools/probe.py to dump 0x30-0x50
-  from the connected unit. Temperature is the fastest confirmation: it should
-  read near ambient (roughly 2000-3000 raw at 0.01 degC per count). Vibration
-  velocity, displacement and dominant frequency are believed to be direct
-  engineering integers rather than full-scale ratios; confirm by exciting the
-  sensor and checking that velocity tracks displacement times frequency.
+  Cross-checked two ways on 2026-07-31. (1) Every address and scale factor below
+  is transcribed from the manufacturer's register table and its per-register
+  formulas, not inferred. (2) Each block was confirmed live on the connected unit
+  at slave 0x50, 9600 baud, over 585 samples across two stimulus captures.
+  Acceleration was independently validated: the three axes at rest sum to a
+  vector magnitude of 0.993 g, which only the correct scale factor produces.
+  Temperature read 24.2 degC against a plausibly 24 degC room.
 
-  SUSPECTED WRONG - velocity scale. Simulation at scale 1.0 gives 1 mm/s
-  resolution. ISO 10816 zone boundaries are 1.12, 2.8 and 7.1 mm/s, so a
-  1 mm/s step cannot separate "good" from "unsatisfactory" and no vendor would
-  ship that for condition monitoring. Expect the true scale to be finer, most
-  likely 0.1 mm/s per count. Confirm during commissioning by comparing the
-  reading against a calibrated reference or by checking whether a slow change in
-  excitation moves the register in steps of more than one count.
+  Registers 0x37-0x39 are live on this unit and respond to excitation, but they
+  do NOT appear in the manufacturer's register table at all - it jumps from 0x36
+  to 0x3A. They are almost certainly the underlying IMU's angular-velocity
+  registers, exposed but unsupported. They are deliberately NOT included here: an
+  undocumented register may move or disappear in a firmware revision.
 
 serial:
   baud: 9600
@@ -33,32 +31,69 @@ serial:
   supported_bauds: [4800, 9600, 19200, 38400, 57600, 115200, 230400]
 
 register_groups:
-  - key: vibration
-    label: Vibration velocity, angle, temperature, displacement and frequency
+  # Acceleration. Manual 10.4.5: AX = AX[15:0]/32768*16 g.
+  - key: acceleration
+    label: Triaxial acceleration
+    function_code: 3
+    default_poll_hz: 10
+    channels:
+      - {key: accel_x, label: Acceleration X, quantity: acceleration, unit: g, address: 0x34, scale: 0.00048828125, minimum: -16, maximum: 16}
+      - {key: accel_y, label: Acceleration Y, quantity: acceleration, unit: g, address: 0x35, scale: 0.00048828125, minimum: -16, maximum: 16}
+      - {key: accel_z, label: Acceleration Z, quantity: acceleration, unit: g, address: 0x36, scale: 0.00048828125, minimum: -16, maximum: 16}
+
+  # Vibration velocity. Manual 10.4.6: VX (mm/s) = raw/100.
+  # 0.01 mm/s per count resolves the ISO 10816 zone boundaries (1.12 / 2.8 /
+  # 7.1 mm/s) with room to spare.
+  - key: vibration_velocity
+    label: Triaxial vibration velocity
     function_code: 3
     default_poll_hz: 5
     channels:
-      - {key: vib_velocity_x, label: Vibration velocity X, quantity: vibration_velocity, unit: mm/s, address: 0x34, minimum: 0, maximum: 1000}
-      - {key: vib_velocity_y, label: Vibration velocity Y, quantity: vibration_velocity, unit: mm/s, address: 0x35, minimum: 0, maximum: 1000}
-      - {key: vib_velocity_z, label: Vibration velocity Z, quantity: vibration_velocity, unit: mm/s, address: 0x36, minimum: 0, maximum: 1000}
-      - {key: vib_angle_x, label: Vibration angle X, quantity: vibration_angle, unit: deg, address: 0x37, scale: 0.0054931640625, minimum: -180, maximum: 180}
-      - {key: vib_angle_y, label: Vibration angle Y, quantity: vibration_angle, unit: deg, address: 0x38, scale: 0.0054931640625, minimum: -180, maximum: 180}
-      - {key: vib_angle_z, label: Vibration angle Z, quantity: vibration_angle, unit: deg, address: 0x39, scale: 0.0054931640625, minimum: -180, maximum: 180}
-      - {key: temperature, label: Temperature, quantity: temperature, unit: degC, address: 0x3A, scale: 0.01, minimum: -40, maximum: 125}
-      - {key: vib_displacement_x, label: Vibration displacement X, quantity: vibration_displacement, unit: um, address: 0x3B, minimum: 0, maximum: 65535}
-      - {key: vib_displacement_y, label: Vibration displacement Y, quantity: vibration_displacement, unit: um, address: 0x3C, minimum: 0, maximum: 65535}
-      - {key: vib_displacement_z, label: Vibration displacement Z, quantity: vibration_displacement, unit: um, address: 0x3D, minimum: 0, maximum: 65535}
-      - {key: vib_frequency_x, label: Dominant frequency X, quantity: dominant_frequency, unit: Hz, address: 0x3E, minimum: 0, maximum: 1000}
-      - {key: vib_frequency_y, label: Dominant frequency Y, quantity: dominant_frequency, unit: Hz, address: 0x3F, minimum: 0, maximum: 1000}
-      - {key: vib_frequency_z, label: Dominant frequency Z, quantity: dominant_frequency, unit: Hz, address: 0x40, minimum: 0, maximum: 1000}
+      - {key: vib_velocity_x, label: Vibration velocity X, quantity: vibration_velocity, unit: mm/s, address: 0x3A, scale: 0.01, minimum: 0, maximum: 120}
+      - {key: vib_velocity_y, label: Vibration velocity Y, quantity: vibration_velocity, unit: mm/s, address: 0x3B, scale: 0.01, minimum: 0, maximum: 120}
+      - {key: vib_velocity_z, label: Vibration velocity Z, quantity: vibration_velocity, unit: mm/s, address: 0x3C, scale: 0.01, minimum: 0, maximum: 120}
+
+  # Temperature, displacement and frequency read as one contiguous span:
+  # 0x40 TEMP, 0x41-0x43 DX-DZ, 0x44-0x46 HZX-HZZ. One transaction is cheaper
+  # than three, and the engine tolerates the gap-free layout here.
+  - key: vibration_summary
+    label: Temperature, displacement and dominant frequency
+    function_code: 3
+    default_poll_hz: 5
+    channels:
+      # Manual 10.4.8: Temperature = TEMP[15:0]/100 degC.
+      - {key: temperature, label: Chip temperature, quantity: temperature, unit: degC, address: 0x40, scale: 0.01, minimum: -40, maximum: 125}
+      # Manual 10.4.9: DX(um) = raw, no scaling. Note the summary table's
+      # "mm" units column contradicts the detailed section, which states um and
+      # gives a formula with no divisor. The detailed section governs.
+      - {key: vib_displacement_x, label: Vibration displacement X, quantity: vibration_displacement, unit: um, address: 0x41, scale: 1.0, minimum: 0, maximum: 32767}
+      - {key: vib_displacement_y, label: Vibration displacement Y, quantity: vibration_displacement, unit: um, address: 0x42, scale: 1.0, minimum: 0, maximum: 32767}
+      - {key: vib_displacement_z, label: Vibration displacement Z, quantity: vibration_displacement, unit: um, address: 0x43, scale: 1.0, minimum: 0, maximum: 32767}
+      # Manual 10.4.10: HZX (Hz) = raw/10.
+      - {key: vib_frequency_x, label: Dominant frequency X, quantity: dominant_frequency, unit: Hz, address: 0x44, scale: 0.1, minimum: 0, maximum: 300}
+      - {key: vib_frequency_y, label: Dominant frequency Y, quantity: dominant_frequency, unit: Hz, address: 0x45, scale: 0.1, minimum: 0, maximum: 300}
+      - {key: vib_frequency_z, label: Dominant frequency Z, quantity: dominant_frequency, unit: Hz, address: 0x46, scale: 0.1, minimum: 0, maximum: 300}
+
+  # Device clock. Manual 10.4.4. Packed byte pairs, decoded by the engine rather
+  # than scaled, so they are exposed as diagnostics only.
+  - key: device_time
+    label: On-chip time
+    function_code: 3
+    default_poll_hz: 1
+    channels:
+      - {key: time_yymm, label: Year and month, quantity: device_time, unit: packed, address: 0x30, data_type: uint16}
+      - {key: time_ddhh, label: Day and hour, quantity: device_time, unit: packed, address: 0x31, data_type: uint16}
+      - {key: time_mmss, label: Minute and second, quantity: device_time, unit: packed, address: 0x32, data_type: uint16}
+      - {key: time_ms, label: Millisecond, quantity: device_time, unit: ms, address: 0x33, data_type: uint16, minimum: 0, maximum: 1000}
 
 protected_commands:
-  - {key: save_config, label: Save configuration, address: 0x00, requires_step_up: true, description: "Persists settings to flash. Never issued during discovery."}
-  - {key: set_baud, label: Change baud rate, address: 0x04, requires_step_up: true, description: "Changing baud will drop the bus until the poller reconnects."}
-  - {key: set_slave_id, label: Change Modbus address, address: 0x1A, requires_step_up: true, description: "Risk of address collision on a multi-drop bus."}
+  - {key: save_config, label: Save / reboot / restore factory settings, address: 0x00, requires_step_up: true, description: "Manual 10.4.1. Never issued during discovery."}
+  - {key: set_baud, label: Change baud rate, address: 0x04, requires_step_up: true, description: "Manual 10.4.2. Drops the bus until the poller reconnects."}
+  - {key: set_slave_id, label: Change device address, address: 0x1A, requires_step_up: true, description: "Manual 10.4.3. Risk of address collision on a multi-drop bus."}
 
 limitations:
-  - "Register addresses are unverified; this profile cannot drive alarms until confirmed on hardware."
-  - "The device reports reduced aggregates (RMS velocity, displacement, dominant frequency), not raw waveform."
-  - "Acceleration is not exposed: it is not confirmed as a readable channel on this firmware and must not be inferred."
-  - "Spectral analysis of these channels describes slow trends, not machine vibration spectra; the device performs its own frequency estimation internally."
+  - "Reports reduced aggregates (RMS velocity, displacement, dominant frequency), not raw waveform. Spectral analysis of these channels describes slow trends, not machine vibration spectra."
+  - "Registers 0x3D-0x3F are documented as Reserved and read zero."
+  - "Registers 0x37-0x39 are live but absent from the manufacturer register table; excluded as unsupported."
+  - "OBSERVED ON THIS UNIT: VY, VZ, DY and DZ read exactly zero under excitation that produced non-zero VX, DX and all three frequency axes. Unexplained; see docs/register-maps.md. Y/Z velocity and displacement alarms must not be enabled until this is resolved."
+  - "Statistical feature blocks (0x47-0x6A) and spectrum energy blocks (0x6E-0x9A) are documented but not yet modelled in this profile."

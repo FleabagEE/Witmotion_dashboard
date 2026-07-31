@@ -17,11 +17,70 @@ Enforced by `SensorProfile.is_trustworthy()` and asserted in the test suite.
 
 | Model | Profile | Version | Status |
 |---|---|---|---|
+| WTVB01-485 | `profiles/wtvb01-485.v1.yaml` | 1.0.0 | **`verified`** 2026-07-31 |
 | HWT901B-485 | `profiles/hwt901b-485.v1.yaml` | 1.0.0 | `candidate` |
-| WTVB01-485 | `profiles/wtvb01-485.v1.yaml` | 0.1.0 | `unverified` |
 
-Neither sensor can drive an alarm today. That is intentional and is the gate the
-commissioning step exists to clear.
+### WTVB01-485 verified — resolution of the earlier ambiguity
+
+Source: *WTVB01-485 Datasheet and User Guide*, document **V260508**, sections
+10.3 and 10.4. Device firmware package **Version 10059**.
+
+| Registers | Symbol | Quantity | Formula | Unit |
+|---|---|---|---|---|
+| 0x30-0x33 | YYMM/DDHH/MMSS/MS | On-chip time | packed bytes | — |
+| 0x34-0x36 | AX-AZ | Acceleration | `raw/32768*16` | g |
+| 0x3A-0x3C | VX-VZ | Vibration velocity | `raw/100` | mm/s |
+| 0x3D-0x3F | — | Reserved | — | — |
+| 0x40 | TEMP | Chip temperature | `raw/100` | degC |
+| 0x41-0x43 | DX-DZ | Vibration displacement | `raw` | um |
+| 0x44-0x46 | HZX-HZZ | Vibration frequency | `raw/10` | Hz |
+| 0x47-0x6A | CFX…DRMSZ | Per-axis statistical features | mostly `raw/1000` | g, mm/s, mm |
+| 0x6B-0x6D | ERRX-ERRZ | Fault diagnosis | — | — |
+| 0x6E-0x9A | AX/AY/AZ_ENERGY_* | Spectrum energy points and bands | — | — |
+
+**Two errors the verification gate caught**, either of which would have shipped a
+confidently wrong dashboard:
+
+1. **0x44-0x46 is frequency, not velocity.** Stimulus testing had identified it
+   as "the strongest candidate triple" for a vibration quantity - three
+   consecutive registers, zero at rest, tracking excitation. It is HZX-HZZ in Hz.
+   Reporting it as mm/s would have put ~62-126 into a velocity alarm whose ISO
+   10816 danger threshold is 7.1.
+2. **Velocity scale is `raw/100`, not `raw`.** Predicted before the manual
+   arrived, from the observation that 1 mm/s resolution cannot separate the ISO
+   10816 zone boundaries at 1.12 / 2.8 / 7.1 mm/s. Confirmed exactly.
+
+Also corrected: acceleration **is** documented for this model (10.4.5) - an
+earlier note here wrongly called it undocumented, based on a third-party summary.
+What is genuinely undocumented is **0x37-0x39**, which are live on the unit and
+respond to excitation but appear nowhere in the register table (it jumps 0x36 to
+0x3A). Almost certainly the underlying IMU's angular-velocity registers. Excluded
+from the profile: an undocumented register may move in a firmware revision.
+
+### OPEN ISSUE — Y and Z velocity and displacement read zero
+
+On this unit, under excitation that produced non-zero VX, DX and **all three**
+frequency axes, the registers VY, VZ (0x3B, 0x3C) and DY, DZ (0x42, 0x43) stayed
+at exactly zero across 585 samples in two captures.
+
+This is internally inconsistent: HZY and HZZ reported dominant frequencies of
+5.6 Hz and 16.7 Hz, which requires vibration energy on those axes, yet the
+corresponding velocity and displacement are zero rather than small.
+
+Candidate explanations, none yet tested: a firmware defect in Version 10059; a
+per-axis configuration the PC software exposes; or a hardware fault in this unit.
+
+**Consequence:** Y and Z velocity and displacement alarms must stay disabled. The
+channels remain in the profile, because the register table documents them and the
+addresses are certain - only their behaviour on this unit is in question. Recheck
+against a second WTVB01-485 before shipping.
+
+### HWT901B-485
+
+Still `candidate`. Not yet connected to the bus; the manufacturer table for that
+model has not been cross-checked. Its acceleration and temperature scalings are
+family-standard and now corroborated by the WTVB01 manual, but the attitude,
+magnetic and quaternion blocks remain unconfirmed.
 
 ## Why this gate exists
 

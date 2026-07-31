@@ -127,10 +127,13 @@ class TestProfiles:
         with pytest.raises(KeyError):
             loader.get("NOT-A-SENSOR")
 
-    def test_wtvb01_is_not_trusted_for_alarms(self) -> None:
+    def test_wtvb01_is_verified_against_manufacturer_table(self) -> None:
+        # Promoted 2026-07-31: every address and scale transcribed from the
+        # manufacturer register table and confirmed on hardware.
+        # See docs/register-maps.md and tests/test_wtvb01_fixtures.py.
         profile = loader.get("WTVB01-485")
-        assert profile.verification_status == "unverified"
-        assert not profile.is_trustworthy()
+        assert profile.verification_status == "verified"
+        assert profile.is_trustworthy()
 
     def test_hwt901b_is_candidate_pending_hardware(self) -> None:
         profile = loader.get("HWT901B-485")
@@ -163,11 +166,13 @@ class TestProfiles:
     def test_capabilities_differ_between_sensors(self) -> None:
         vibration = loader.get("WTVB01-485").capabilities()
         inertial = loader.get("HWT901B-485").capabilities()
-        # The whole point of the capability model: these sensors share almost
-        # nothing beyond temperature, so no UI or alarm logic may assume channels.
-        assert "acceleration" in inertial and "acceleration" not in vibration
+        # The whole point of the capability model: these sensors overlap only on
+        # acceleration and temperature, so no UI or alarm logic may assume a
+        # channel exists. The WTVB01 does expose acceleration (register table
+        # 0x34-0x36, confirmed on hardware), but nothing else inertial.
+        assert "attitude_angle" in inertial and "attitude_angle" not in vibration
         assert "vibration_velocity" in vibration and "vibration_velocity" not in inertial
-        assert vibration & inertial == {"temperature"}
+        assert vibration & inertial == {"acceleration", "temperature"}
 
     def test_protected_commands_require_step_up(self) -> None:
         for model in ("WTVB01-485", "HWT901B-485"):

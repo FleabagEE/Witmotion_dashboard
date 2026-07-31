@@ -151,16 +151,18 @@ class TestEndToEnd:
     def test_reads_vibration_from_simulated_wtvb01(self) -> None:
         profile = loader.get("WTVB01-485")
         device = SimulatedDevice(profile=profile, slave_id=0x51)
-        group = profile.register_groups[0]
+        summary = next(g for g in profile.register_groups if g.key == "vibration_summary")
+        velocity = next(g for g in profile.register_groups if g.key == "vibration_velocity")
 
         with SimulatorServer({0x51: device}) as server:
             with ModbusReader(server.port, baud=115200, timeout=1.0) as reader:
-                reading = reader.read_group(profile, group, slave_id=0x51)
+                summary_reading = reader.read_group(profile, summary, slave_id=0x51)
+                velocity_reading = reader.read_group(profile, velocity, slave_id=0x51)
 
-        assert reading.ok
-        assert reading.channels["temperature"].value == pytest.approx(24.0, abs=1.0)
-        assert reading.channels["vib_velocity_x"].value > 0
-        assert reading.channels["vib_velocity_x"].unit == "mm/s"
+        assert summary_reading.ok and velocity_reading.ok
+        assert summary_reading.channels["temperature"].value == pytest.approx(24.0, abs=1.0)
+        assert velocity_reading.channels["vib_velocity_x"].value > 0
+        assert velocity_reading.channels["vib_velocity_x"].unit == "mm/s"
 
     def test_two_sensor_models_share_one_bus(self) -> None:
         vibration = loader.get("WTVB01-485")
@@ -178,7 +180,9 @@ class TestEndToEnd:
                     slave_id=0x50,
                 )
                 vibration_reading = reader.read_group(
-                    vibration, vibration.register_groups[0], slave_id=0x51
+                    vibration,
+                    next(g for g in vibration.register_groups if g.key == "vibration_summary"),
+                    slave_id=0x51,
                 )
 
         assert inertial_reading.ok and vibration_reading.ok
