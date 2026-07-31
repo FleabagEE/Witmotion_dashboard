@@ -346,3 +346,29 @@ that question always has an answer.
 
 Escalation targets are marked `escalation_only` and excluded from first dispatch.
 Without that, escalating merely tells the same person twice.
+
+---
+
+## ADR-018 — Reports are evidence, so they must be reproducible
+
+**Decision.** Every report stores its parameters, software version, processing
+version, standard-table status, and a SHA-256 of its own content. Regenerating
+with the same parameters and processing version yields the same checksum.
+
+**Context.** A vibration report may end up attached to a damage claim or a
+dispute with a contractor. A document that cannot be reproduced is an assertion,
+not evidence. `PROCESSING_VERSION` is bumped whenever the arithmetic changes, so
+an old report is never silently reinterpreted under new rules.
+
+**Cost.** Changing a statistic means bumping the version and accepting that old
+and new reports will not match - which is the correct outcome, stated openly.
+
+Two things the report refuses to obscure:
+
+- **Gaps are reported as gaps.** A quiet hour and an hour with the sensor offline
+  look identical on a chart. Every report states coverage and gap minutes, and
+  the PDF carries a caution when data is missing, because absence of a reading is
+  not evidence that the structure was still.
+- **Caveats go at the top.** While the guideline tables remain unverified, the
+  PDF opens with a box saying so and stating that the document is not a
+  compliance assessment. A reader who stops after the first page must still know.

@@ -72,7 +72,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Verify DIN 4150-3 / BS 7385-2 tables | blocked | Signal | standard text | Promote candidate -> verified | Needs standard |
 | Rate-of-change and baseline alarms | todo | Signal | alarm engine | Needs occupied-building baseline | — |
 | Notifications | done | Backend | alarms | 17 tests: dedupe, quiet hours, escalation | `NotificationDispatcher` |
-| Reports (PDF/CSV) | todo | Backend | alarms | Reproducibility test | — |
+| Reports (PDF/CSV) | done | Backend | alarms | 14 tests incl. reproducible checksum | `ReportGenerator` |
 | Audit trail | done | DevSecOps | auth | Append-only, enforced by DB trigger | `AuditLogger` |
 
 ## Phase 5 — Frontend
