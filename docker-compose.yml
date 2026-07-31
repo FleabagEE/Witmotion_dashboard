@@ -54,6 +54,26 @@ services:
       timeout: 3s
       retries: 5
 
+  # Published on 1884: the host's 1883 already belongs to another product, and
+  # sharing a broker would couple this appliance's topics to software it does
+  # not control.
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: qv-mosquitto
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1884:1883"
+    volumes:
+      - ./deploy/mosquitto/config:/mosquitto/config:ro
+      - qv_mosquitto_data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -p 1883 -u quakevault -P \"$$MQTT_PASSWORD\" -t '$$SYS/broker/uptime' -C 1 -W 3 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 15s
+
 volumes:
   qv_timescale_data:
   qv_redis_data:
+  qv_mosquitto_data:

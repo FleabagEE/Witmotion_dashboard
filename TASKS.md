@@ -26,7 +26,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Modbus RTU simulator (both sensors) | done | Controls | profiles, encoder | 18 tests, end-to-end over pty | `simulator/` |
 | Profile-driven reader + quality flags | done | Backend | decoder | End-to-end vs simulator | `client.py` |
 
-| MQTT topic + payload schema | todo | Architect | measurement schema | Schema tests | — |
+| MQTT publication | done | Architect | ingestion | 10 tests + live broker round-trip | `MqttPublisher` |
 | Ingestion API contract | todo | Backend | measurement schema | OpenAPI + contract tests | — |
 | Database design (hypertables) | done | Backend | measurement schema | 7 migrations applied, policies verified | TimescaleDB 2.29/pg18 |
 

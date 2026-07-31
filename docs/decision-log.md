@@ -372,3 +372,39 @@ Two things the report refuses to obscure:
 - **Caveats go at the top.** While the guideline tables remain unverified, the
   PDF opens with a box saying so and stating that the document is not a
   compliance assessment. A reader who stops after the first page must still know.
+
+---
+
+## ADR-019 — MQTT is outbound only
+
+**Decision.** The appliance publishes to MQTT and never subscribes for data.
+Measurements enter through the authenticated ingestion API alone.
+
+**Context.** MQTT is an integration surface: a broker credential may end up in a
+SCADA system, a third-party gateway, or a contractor's laptop. If MQTT could
+write to the historical record, any of those becomes a route to forge readings
+or alarms. Publishing only means a compromised broker can mislead somebody's
+screen but cannot corrupt the evidence.
+
+The broker enforces this too. `allow_anonymous false`, and the ACL grants the
+`integration` user read-only on `quakevault/#`, verified by observing that a
+publish from that credential is discarded rather than delivered.
+
+**Cost.** Integrations that want to push data must use the ingestion API and hold
+an appliance token. That is the intended friction.
+
+Details that matter:
+
+- **Alarms are QoS 1 and not retained.** An integration must not miss an alarm to
+  a dropped packet, but a retained one would be replayed to every new subscriber
+  and misread as live.
+- **Status and health are retained.** A subscriber connecting at any moment
+  learns the current state immediately instead of waiting for the next event.
+- **A last will is registered.** If the publisher dies, subscribers are told the
+  appliance went offline rather than being left with a stale retained `online`.
+- **`provisional` travels on the wire.** An integration receives alarms raised
+  from unverified thresholds - it is consuming data, not being paged - but
+  nothing downstream can mistake one for confirmed.
+- **Publishing never breaks monitoring.** Every failure is logged and swallowed:
+  an unreachable broker is an integration outage, and the database still holds
+  the truth.

@@ -1,0 +1,12 @@
+# Topic permissions.
+#
+# The appliance publishes; integrations subscribe. Nothing that subscribes is
+# permitted to write, so a subscriber credential leaking cannot be used to forge
+# an alarm.
+
+user quakevault
+topic write quakevault/#
+topic read quakevault/#
+
+user integration
+topic read quakevault/#

@@ -42,6 +42,15 @@ class NotificationDispatcher
         $results = [];
         $event->loadMissing('definition');
 
+        // Integrations hear about every alarm, including provisional ones -
+        // they are consuming data, not being paged - but the flag travels with
+        // it so nothing downstream can mistake one for confirmed.
+        try {
+            app(MqttPublisher::class)->publishAlarm($event);
+        } catch (\Throwable $exception) {
+            Log::warning('mqtt alarm publish failed', ['error' => $exception->getMessage()]);
+        }
+
         // Escalation targets are excluded here: they exist to hear about
         // alarms nobody acknowledged, not to receive the first message too.
         $channels = NotificationChannel::where('enabled', true)
