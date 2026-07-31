@@ -46,7 +46,10 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Unified measurement model | done | Architect | capability schema | Schema-versioned envelope | `measurement.py` |
 | Local spool + replay | done | Backend | engine | SIGKILL mid-write + live outage drill | `spool.py` |
 | Discovery + confidence scoring | done | Controls | engine | 21 tests + live hardware | `discovery.py` |
-| systemd units (hardened) | todo | DevSecOps | engine | `systemd-analyze security` | — |
+| systemd units (hardened) | done | DevSecOps | engine | systemd-analyze security 1.3 OK | `deploy/systemd/` |
+| Service entrypoint + config | done | Backend | engine, spool | 21 tests, live under systemd | `service.py`, `config.py` |
+| Prometheus metrics | done | DevSecOps | engine | Textfile collector, atomic write | `metrics.py` |
+| Installer (idempotent) | done | DevSecOps | units | Re-run on live host, non-destructive | `deploy/install-acquisition.sh` |
 
 ## Phase 4 — Backend
 

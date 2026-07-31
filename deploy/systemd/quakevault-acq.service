@@ -1,0 +1,77 @@
+[Unit]
+Description=QuakeVault industrial acquisition service
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+After=network-online.target
+Wants=network-online.target
+# Acquisition is deliberately independent of the application containers: it must
+# keep polling and spooling while Docker, the database or MQTT are restarting.
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=quakevault-acq
+Group=quakevault-acq
+SupplementaryGroups=dialout
+
+ExecStartPre=/var/www/quakevault-industrial/.venv/bin/python -m qv_acq.service --check \
+    --config /etc/quakevault/acquisition.yaml
+ExecStart=/var/www/quakevault-industrial/.venv/bin/python -m qv_acq.service \
+    --config /etc/quakevault/acquisition.yaml
+Environment=PYTHONPATH=/var/www/quakevault-industrial/acquisition/src
+Environment=PYTHONUNBUFFERED=1
+Environment=QV_LOCK_DIR=/run/quakevault-acq
+
+Restart=always
+RestartSec=3
+# A configuration error (exit 2) is not transient. Restarting forever against a
+# port we will never get, or a profile that will never verify, hides the fault.
+RestartPreventExitStatus=2
+
+WatchdogSec=60
+TimeoutStopSec=20
+
+StateDirectory=quakevault-acq
+StateDirectoryMode=0750
+RuntimeDirectory=quakevault-acq
+RuntimeDirectoryMode=0750
+LogsDirectory=quakevault-acq
+
+# --- hardening ---------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=false
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Subtract what an acquisition service never needs: no privilege changes, no
+# scheduler or resource tuning.
+SystemCallFilter=~@privileged ~@resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# Serial ports only. PrivateDevices stays false because it would hide /dev/tty*
+# entirely; the cgroup device policy below is the narrower control.
+DevicePolicy=closed
+DeviceAllow=char-ttyUSB rw
+DeviceAllow=char-ttyACM rw
+
+ReadWritePaths=/var/lib/quakevault-acq
+
+[Install]
+WantedBy=multi-user.target

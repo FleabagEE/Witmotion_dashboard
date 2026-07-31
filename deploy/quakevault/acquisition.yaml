@@ -1,0 +1,58 @@
+# QuakeVault acquisition configuration.
+#
+# Installed to /etc/quakevault/acquisition.yaml. Validate any change before
+# restarting the service:
+#
+#   sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
+#       -m qv_acq.service --check --config /etc/quakevault/acquisition.yaml
+#
+# The service refuses to start on a sensor whose profile is not `verified`, so a
+# register map that has not been confirmed cannot reach production by accident.
+
+appliance_id: QV-EDGE-001
+
+spool:
+  path: /var/lib/quakevault-acq/spool.db
+  max_rows: 500000
+  # true  = bounded disk, oldest undelivered data sacrificed when full (counted, never silent)
+  # false = never discard undelivered data, accept unbounded growth instead
+  drop_undelivered_when_full: true
+
+metrics:
+  path: /var/lib/quakevault-acq/metrics.prom
+  interval_seconds: 10
+  enabled: true
+
+buses:
+  - bus_id: BUS-001
+    adapter_id: RS485-ADAPTER-001
+    # Always a stable alias from the udev rules, never /dev/ttyUSB0: the kernel
+    # name renumbers across reboots and replugs.
+    port: /dev/quakevault-rs485-a
+    baud: 9600
+    timeout: 1.0
+    retry_max_attempts: 2
+    breaker_failure_threshold: 3
+    breaker_cooldown_seconds: 5.0
+    sensors:
+      - sensor_id: SENSOR-001
+        model: WTVB01-485
+        slave_id: 0x50
+        groups:
+          - acceleration
+          - vibration_velocity
+          - vibration_summary
+          - condition_x
+          - condition_y
+          - condition_z
+          - fault_diagnosis
+        # Rates must fit the bus. At 9600 baud one WTVB01 sustains roughly
+        # 13 Hz total across all groups; see docs/known-limitations.md.
+        poll_hz:
+          acceleration: 4
+          vibration_velocity: 2
+          vibration_summary: 2
+          condition_x: 0.5
+          condition_y: 0.5
+          condition_z: 0.5
+          fault_diagnosis: 0.2
