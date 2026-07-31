@@ -1,3 +1,15 @@
+# RETIRED FROM THE PRODUCT - kept only as a test fixture.
+#
+# The HWT901B-485 was dropped on 2026-07-31: the WTVB01-485 covers every channel
+# the appliance needs. This profile is no longer shipped and no longer loaded by
+# the profile loader.
+#
+# It stays here because it is the only profile whose capabilities differ
+# wholesale from the WTVB01's, and the tests that use it are what prove the
+# acquisition stack is genuinely profile-driven rather than quietly
+# single-sensor. Deleting it would leave the capability model untested until the
+# next sensor is added - exactly when a regression would be most expensive.
+#
 schema_version: "1.0"
 profile_version: "1.0.0"
 manufacturer: WitMotion

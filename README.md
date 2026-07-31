@@ -3,12 +3,11 @@
 Enterprise monitoring appliance for industrial Modbus RTU sensors on RS-485,
 built for dedicated Ubuntu hosts.
 
-Supported sensors:
+Supported sensor:
 
-- **WTVB01-485** — MEMS vibration sensor (velocity, displacement, dominant
-  frequency, angle, temperature)
-- **HWT901B-485** — AHRS / inclinometer (acceleration, angular velocity,
-  attitude, quaternion, magnetic field, temperature)
+- **WTVB01-485** — MEMS vibration sensor. Triaxial acceleration, vibration
+  velocity, displacement and dominant frequency, chip temperature, and 36
+  on-device condition indicators (RMS, kurtosis, crest factor, skewness...).
 
 Additional sensors are added by writing a profile, never by changing the
 acquisition engine.

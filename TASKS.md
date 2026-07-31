@@ -17,7 +17,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 |---|---|---|---|---|---|
 | Sensor capability schema | done | Architect | — | pydantic + 12 unit tests | `profiles/schema.py` |
 | WTVB01-485 profile | done | Controls | schema | Loads, marked unverified | `wtvb01-485.v1.yaml` |
-| HWT901B-485 profile | done | Controls | schema | Loads, scaling asserted | `hwt901b-485.v1.yaml` |
+| HWT901B-485 profile | retired | Controls | — | Moved to tests/fixtures (ADR-009) | Not shipped |
 | Modbus CRC-16 | done | Backend | — | Published vector 0x0A84 | `crc.py` |
 | Register decoder | done | Backend | — | 11 unit tests | `decode.py` |
 | Bus throughput model | done | Controls | — | Hand-calc cross-check | `throughput.py` |
@@ -37,7 +37,6 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Create `quakevault-acq` service account | done | DevSecOps | root access | Account exists, opens port | uid 995, dialout only |
 | udev stable adapter naming | done | DevSecOps | service account | Alias resolves after trigger | `/dev/quakevault-rs485-a` |
 | Verify WTVB01-485 register map | done | Controls | dialout, probe, manual | Manual V260508 + hardware, 20 fixtures | **verified** |
-| Verify HWT901B-485 register map | blocked | Controls | sensor on bus | Transcript in register-maps.md | Needs wiring |
 | Resolve VY/VZ/DY/DZ reading zero | todo | Controls | second unit | Compare against a 2nd WTVB01 | Open issue |
 | Model 0x47-0x6A statistical features | todo | Signal | manual 10.4.11-10.4.17 | Fixtures per channel | — |
 
@@ -69,7 +68,6 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Overview | todo | Frontend | API | Component tests | — |
 | Live Monitor | todo | Frontend | API | Smoothness at target rate | — |
 | Signal Analysis (gated) | todo | Signal | throughput model | Refuses out-of-band requests | — |
-| 3D orientation (HWT901B) | todo | Frontend | quaternion channels | Visual + axis-convention check | — |
 | Alarm Center | todo | Frontend | alarms | Workflow tests | — |
 | Kiosk mode | todo | Frontend | auth roles | Survives reboot | — |
 
@@ -85,7 +83,5 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 ## Blocked — operator action required
 
-1. Wire the HWT901B-485 to the bus at a slave address other than 0x50, so its
-   register map can be verified and multi-drop exercised.
-2. Investigate VY/VZ/DY/DZ reading exactly zero on the WTVB01-485 (see
+1. Investigate VY/VZ/DY/DZ reading exactly zero on the WTVB01-485 (see
    docs/register-maps.md). Ideally compare against a second unit.

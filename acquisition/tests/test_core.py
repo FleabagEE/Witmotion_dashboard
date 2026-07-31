@@ -4,10 +4,24 @@ from __future__ import annotations
 
 import math
 
+from pathlib import Path
+
 import pytest
 
 from qv_acq import crc, decode, throughput
 from qv_acq.profiles import loader
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def alt_profile():
+    """A retired sensor profile, loaded only to prove the stack is profile-driven.
+
+    Its capabilities barely overlap the WTVB01's, so any code that quietly
+    assumes one sensor model fails here.
+    """
+    return loader.load_file(FIXTURES / "hwt901b-485.v1.yaml")
 
 
 class TestCrc:
@@ -119,9 +133,13 @@ class TestThroughput:
 
 
 class TestProfiles:
-    def test_both_sensors_load(self) -> None:
+    def test_only_the_supported_sensor_is_shipped(self) -> None:
+        # The HWT901B-485 was retired on 2026-07-31; it must not be loadable as
+        # a product profile, only as a test fixture.
         profiles = loader.load_all()
-        assert {"WTVB01-485", "HWT901B-485"} <= set(profiles)
+        assert set(profiles) == {"WTVB01-485"}
+        with pytest.raises(KeyError):
+            loader.get("HWT901B-485")
 
     def test_unknown_model_raises(self) -> None:
         with pytest.raises(KeyError):
@@ -135,37 +153,37 @@ class TestProfiles:
         assert profile.verification_status == "verified"
         assert profile.is_trustworthy()
 
-    def test_hwt901b_is_candidate_pending_hardware(self) -> None:
-        profile = loader.get("HWT901B-485")
+    def test_retired_profile_is_not_trustworthy(self) -> None:
+        profile = alt_profile()
         assert profile.verification_status == "candidate"
         assert not profile.is_trustworthy()
 
     def test_hwt901b_acceleration_scaling(self) -> None:
-        channel = loader.get("HWT901B-485").channel("accel_z")
+        channel = alt_profile().channel("accel_z")
         value = decode.decode([2048], channel.data_type, scale=channel.scale)
         assert value == pytest.approx(1.0)
 
     def test_hwt901b_attitude_scaling(self) -> None:
-        channel = loader.get("HWT901B-485").channel("pitch")
+        channel = alt_profile().channel("pitch")
         assert decode.decode([16384], "int16", scale=channel.scale) == pytest.approx(90.0)
 
     def test_temperature_scaling(self) -> None:
-        channel = loader.get("HWT901B-485").channel("temperature")
+        channel = alt_profile().channel("temperature")
         assert decode.decode([2531], "int16", scale=channel.scale) == pytest.approx(25.31)
 
     def test_quaternion_is_unit_bounded(self) -> None:
-        channel = loader.get("HWT901B-485").channel("q0")
+        channel = alt_profile().channel("q0")
         assert decode.decode([16384], "int16", scale=channel.scale) == pytest.approx(0.5)
         assert math.isclose(channel.maximum, 1.0)
 
     def test_register_group_span_is_contiguous(self) -> None:
-        group = next(g for g in loader.get("HWT901B-485").register_groups if g.key == "inertial")
+        group = next(g for g in alt_profile().register_groups if g.key == "inertial")
         assert group.start_address == 0x34
         assert group.register_count == 6
 
     def test_capabilities_differ_between_sensors(self) -> None:
         vibration = loader.get("WTVB01-485").capabilities()
-        inertial = loader.get("HWT901B-485").capabilities()
+        inertial = alt_profile().capabilities()
         # The whole point of the capability model: these sensors overlap only on
         # acceleration and temperature, so no UI or alarm logic may assume a
         # channel exists. The WTVB01 does expose acceleration (register table
@@ -175,11 +193,11 @@ class TestProfiles:
         assert vibration & inertial == {"acceleration", "temperature"}
 
     def test_protected_commands_require_step_up(self) -> None:
-        for model in ("WTVB01-485", "HWT901B-485"):
-            for command in loader.get(model).protected_commands:
-                assert command.requires_step_up, f"{model}:{command.key} must be gated"
+        for profile in (loader.get("WTVB01-485"), alt_profile()):
+            for command in profile.protected_commands:
+                assert command.requires_step_up, f"{profile.model}:{command.key} must be gated"
 
     def test_every_channel_declares_a_unit(self) -> None:
-        for model in ("WTVB01-485", "HWT901B-485"):
-            for channel in loader.get(model).channels:
-                assert channel.unit, f"{model}:{channel.key} has no engineering unit"
+        for profile in (loader.get("WTVB01-485"), alt_profile()):
+            for channel in profile.channels:
+                assert channel.unit, f"{profile.model}:{channel.key} has no engineering unit"

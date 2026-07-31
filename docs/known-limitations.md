@@ -20,10 +20,8 @@ bridge, 5 ms device turnaround, 20% scheduler safety margin):
 | WTVB01-485 (13 reg) | 9600 | 1 | 56.9 ms | 13.4 Hz | 5.4 Hz |
 | WTVB01-485 | 9600 | 2 | 56.9 ms | 6.7 Hz | 2.7 Hz |
 | WTVB01-485 | 115200 | 1 | 13.0 ms | 58.6 Hz | 23.5 Hz |
-| HWT901B-485 (6 reg) | 9600 | 1 | 42.3 ms | 18.0 Hz | 7.2 Hz |
-| HWT901B-485 | 115200 | 1 | 11.8 ms | 64.7 Hz | 25.9 Hz |
-| HWT901B-485 | 230400 | 1 | 10.4 ms | 73.3 Hz | 29.3 Hz |
-| HWT901B-485 (FTDI) | 230400 | 1 | 7.9 ms | 96.6 Hz | 38.6 Hz |
+| WTVB01-485 | 115200 | 2 | 13.0 ms | 29.3 Hz | 11.7 Hz |
+| WTVB01-485 (FTDI) | 230400 | 1 | ~8 ms | ~97 Hz | ~39 Hz |
 
 Note the shape of the curve: 9600 to 115200 buys a 4.8x improvement, but
 115200 to 230400 buys only 13%. Above roughly 57600 the bottleneck stops being
@@ -47,7 +45,7 @@ Consequences, enforced in code by `throughput.spectral_verdict()`:
 - Every spectrum carries the measured jitter of its source window. Windows
   exceeding the jitter budget are rejected, not silently plotted.
 
-**Machine-vibration spectra are out of scope for both sensors over Modbus.**
+**Machine-vibration spectra are out of scope over Modbus polling.**
 Bearing analysis needs hundreds of Hz of clean, uniformly sampled acceleration.
 That requires a different acquisition path (dedicated DAQ or a sensor with
 onboard FFT), and the appliance must not imply otherwise.
@@ -62,20 +60,19 @@ Correct use: trend the aggregates, alarm on ISO-style velocity bands, track
 dominant-frequency shift over days. Incorrect use: reconstructing a spectrum
 from polled scalars.
 
-The register map is **unverified** (see `register-maps.md`). Until confirmed on
-hardware the profile cannot drive alarms.
+The register map is **verified** against the manufacturer table and the connected
+unit (see `register-maps.md`), so this profile may drive alarms.
 
-## 3. HWT901B-485 attitude and magnetic caveats
+What partly offsets this limitation: the device also computes 36 condition
+indicators internally - RMS, kurtosis, crest factor, skewness, peak and pulse
+factors per axis. Those come from the sensor's own high-rate sampling, so they
+are not constrained by the polling ceiling above. Condition monitoring runs on
+those; the polling limit only constrains what we can reconstruct ourselves.
 
-- Gravity contributes approximately 1 g on the vertical axis when stationary.
-  This is not motion and must never be presented as vibration.
-- GX/GY/GZ are **angular velocity** (deg/s), not translational velocity.
-- Yaw is magnetically referenced in 9-axis mode and is corrupted by motors,
-  iron, strong AC fields, and magnets. Per-installation magnetic calibration is
-  required, and yaw carries a confidence indicator.
-- In 6-axis mode yaw has no absolute reference and drifts without bound.
-- Pressure and altitude are not exposed: they exist only on barometric variants
-  and will not be enabled without confirming the connected unit populates them.
+## 3. HWT901B-485 — retired
+
+Removed from the product on 2026-07-31 (ADR-009). Any limitation previously
+listed here no longer applies to what ships.
 
 ## 4. Derived translational velocity and displacement
 

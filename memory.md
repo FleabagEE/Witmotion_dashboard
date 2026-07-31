@@ -6,9 +6,11 @@ appliance. Session-specific detail does not belong here.
 ## Scope
 
 Enterprise industrial monitoring appliance for RS-485 Modbus RTU sensors on
-dedicated Ubuntu hosts. Initial sensors: WTVB01-485 (vibration aggregates) and
-HWT901B-485 (AHRS / inclinometer). Further sensors are added as profiles, never
-as engine changes.
+dedicated Ubuntu hosts. Supported sensor: WTVB01-485 only. The HWT901B-485 was
+evaluated and retired on 2026-07-31 (ADR-009) because the WTVB01 covers every
+needed channel; its profile survives in acquisition/tests/fixtures/ purely to keep
+the capability model under test. Further sensors are added as profiles, never as
+engine changes.
 
 ## Repository and stack
 
@@ -45,12 +47,6 @@ as engine changes.
   model name (ADR-004).
 - `verification_status` gates alarms: only `verified` may drive them (ADR-005).
   Current state: HWT901B-485 `candidate`, WTVB01-485 `unverified`.
-- WTVB01-485 register addresses are a hypothesis and must be confirmed with
-  `tools/probe.py` before use.
-- HWT901B-485 scaling (confirmed against the published WitMotion family table,
-  pending hardware): acceleration `raw/32768*16` g, angular velocity
-  `raw/32768*2000` deg/s, attitude `raw/32768*180` deg, quaternion `raw/32768`,
-  temperature `raw/100` degC.
 - The two sensors share exactly one capability: temperature. Asserted by test.
 
 ## Measured bus capacity
@@ -61,9 +57,6 @@ CH340, 5 ms turnaround, 20% safety margin:
 |---|---|---|
 | WTVB01, 9600, 1 sensor | 13.4 Hz | 5.4 Hz |
 | WTVB01, 115200, 1 sensor | 58.6 Hz | 23.5 Hz |
-| HWT901B, 115200, 1 sensor | 64.7 Hz | 25.9 Hz |
-| HWT901B, 230400, 1 sensor | 73.3 Hz | 29.3 Hz |
-| HWT901B, 230400, 1 sensor, FTDI | 96.6 Hz | 38.6 Hz |
 
 Above ~57600 baud the bottleneck is device turnaround plus USB latency, not wire
 time: 9600 to 115200 gains 4.8x, 115200 to 230400 gains 13%.
@@ -80,10 +73,7 @@ time: 9600 to 115200 gains 4.8x, 115200 to 230400 gains 13%.
 
 ## Unresolved manufacturer questions
 
-1. WTVB01-485 register addresses and whether velocity/displacement/frequency are
-   direct engineering integers or full-scale ratios.
-2. Whether WTVB01-485 exposes acceleration on the firmware in hand.
-3. Actual device turnaround for both parts (currently assumed 5 ms).
-4. Whether the connected HWT901B-485 variant populates pressure and altitude.
-5. Firmware versions of both units, and whether register layouts differ across
-   them.
+1. Why VY/VZ and DY/DZ read exactly zero while HZY/HZZ report real frequencies.
+2. Actual device turnaround (currently assumed 5 ms).
+3. Meaning of the fault-diagnosis bitfields at 0x6B-0x6D; the manual names the
+   registers but documents no bit semantics.

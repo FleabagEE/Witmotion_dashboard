@@ -55,9 +55,10 @@ mechanism for the gap between them.
 pydantic schema. Adding a sensor means adding a profile and fixtures; the
 acquisition engine is never edited.
 
-**Context.** WTVB01-485 and HWT901B-485 share exactly one capability
-(temperature) - asserted by test. Any code branching on model name would rot
-immediately.
+**Context.** The two profiles built so far overlap on only acceleration and
+temperature - asserted by test. Any code branching on model name would rot
+immediately. See ADR-009 for why the second profile is retained as a fixture even
+though its sensor was retired.
 
 **Cost.** Profile schema changes are migrations. Profiles carry a
 `profile_version` and every stored sample records the version that decoded it.
@@ -67,8 +68,9 @@ immediately.
 ## ADR-005 — Unverified register maps cannot drive alarms
 
 **Decision.** Profiles carry `verification_status` of `unverified`, `candidate`,
-or `verified`. Only `verified` may drive alarms or notifications. WTVB01-485
-ships as `unverified`; HWT901B-485 as `candidate`.
+or `verified`. Only `verified` may drive alarms or notifications. Both profiles
+began as unverified; WTVB01-485 was promoted on 2026-07-31 after its map was
+transcribed from the manufacturer table and confirmed on hardware.
 
 **Context.** A wrong register map does not fail loudly - it produces plausible
 numbers. Silently guessing an address is how a monitoring product tells a
@@ -120,3 +122,25 @@ reboots and replugs.
 **Cost.** udev rules become site-specific when adapters move between ports.
 Commissioning must record the topology, and reseating an adapter into a
 different port is a configuration change.
+
+---
+
+## ADR-009 — HWT901B-485 retired from the product
+
+**Decision.** Ship support for the WTVB01-485 only. The HWT901B-485 is removed
+from `profiles/` and kept solely as a test fixture.
+
+**Context.** The WTVB01 turned out to cover everything the appliance needs. Its
+verified map provides triaxial acceleration, vibration velocity, displacement
+and dominant frequency, temperature, and 36 on-device condition indicators. The
+HWT901B would have added attitude, magnetic field and quaternion - useful for an
+inclinometer product, but not for condition monitoring - at the cost of a second
+register map to verify and maintain.
+
+**Cost.** The capability model now has one production profile, which is exactly
+when a "profile-driven" architecture quietly rots into a single-sensor one. The
+retired profile therefore stays in `acquisition/tests/fixtures/`: its
+capabilities barely overlap the WTVB01's, so the tests that use it fail loudly if
+anything starts assuming one sensor model. Deleting it would leave the capability
+model untested until the next sensor is added - precisely when a regression would
+cost the most.

@@ -18,7 +18,6 @@ Enforced by `SensorProfile.is_trustworthy()` and asserted in the test suite.
 | Model | Profile | Version | Status |
 |---|---|---|---|
 | WTVB01-485 | `profiles/wtvb01-485.v1.yaml` | 1.0.0 | **`verified`** 2026-07-31 |
-| HWT901B-485 | `profiles/hwt901b-485.v1.yaml` | 1.0.0 | `candidate` |
 
 ### WTVB01-485 verified — resolution of the earlier ambiguity
 
@@ -75,12 +74,13 @@ channels remain in the profile, because the register table documents them and th
 addresses are certain - only their behaviour on this unit is in question. Recheck
 against a second WTVB01-485 before shipping.
 
-### HWT901B-485
+### HWT901B-485 — retired 2026-07-31
 
-Still `candidate`. Not yet connected to the bus; the manufacturer table for that
-model has not been cross-checked. Its acceleration and temperature scalings are
-family-standard and now corroborated by the WTVB01 manual, but the attitude,
-magnetic and quaternion blocks remain unconfirmed.
+Dropped from the product (ADR-009); the WTVB01-485 covers every needed channel.
+Its register map was never confirmed: the supplied manual, datasheet and FAQ
+contain no Modbus register table. The profile now lives in
+`acquisition/tests/fixtures/` as a heterogeneity fixture only, and must not be
+deployed.
 
 ## Why this gate exists
 
@@ -118,13 +118,11 @@ with 120 ohm at both ends, and only the sensor under test is connected.
    in advance. Find the register that reads near ambient under the `/100 (degC)`
    column. That fixes the block's base address.
 
-4. **Confirm by stimulus**, one channel at a time:
-   - HWT901B-485: rotate the unit 90 degrees and confirm the expected attitude
-     channel tracks; hold it still and confirm the vertical acceleration axis
-     reads about 1 g while the other two read near zero; confirm angular
-     velocity is non-zero only while moving.
-   - WTVB01-485: excite the mount and confirm velocity, displacement, and
-     dominant frequency respond together and settle to near zero at rest.
+4. **Confirm by stimulus**, one channel at a time. For a vibration sensor: hold
+   it still and confirm the vertical acceleration axis reads about 1 g while the
+   other two read near zero, then excite the mount and confirm velocity,
+   displacement and dominant frequency respond together and settle back to zero
+   at rest.
 
 5. **Check plausibility bounds.** Every decoded value must sit inside the
    profile's declared range across the full stimulus. A value outside the range
@@ -144,9 +142,10 @@ with 120 ohm at both ends, and only the sensor under test is connected.
   step-up authentication and an explicit operator action.
 - Firmware variants differ. A verified map is verified for a stated firmware
   version, not a model name.
-- Do not expose a channel because a datasheet mentions it. WTVB01-485
-  acceleration and HWT901B-485 pressure/altitude stay absent until the connected
-  unit is confirmed to populate them.
+- Do not expose a channel because a datasheet mentions it. A channel is mapped
+  only once the connected unit is confirmed to populate it; WTVB01-485 registers
+  0x37-0x39 are live but undocumented and stay unmapped for the mirror-image
+  reason.
 
 ## Appendix: verification transcripts
 

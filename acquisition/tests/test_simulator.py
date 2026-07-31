@@ -7,6 +7,8 @@ flags - with no hardware attached.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from qv_acq import decode as dec
@@ -17,6 +19,18 @@ from qv_acq.simulator.device import SimulatedDevice
 from qv_acq.simulator.rtu import FaultInjection, handle_request
 from qv_acq.simulator.server import SimulatorServer
 from qv_acq.simulator.signals import SignalSpec
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def alt_profile():
+    """A retired sensor profile, loaded only to prove the stack is profile-driven.
+
+    Its capabilities barely overlap the WTVB01's, so any code that quietly
+    assumes one sensor model fails here.
+    """
+    return loader.load_file(FIXTURES / "hwt901b-485.v1.yaml")
 
 
 class TestEncode:
@@ -53,8 +67,8 @@ class TestEncode:
     def test_every_profile_channel_round_trips(self) -> None:
         # Guards against a profile declaring a scale that cannot represent its
         # own declared range.
-        for model in ("WTVB01-485", "HWT901B-485"):
-            profile = loader.get(model)
+        for profile in (loader.get("WTVB01-485"), alt_profile()):
+            model = profile.model
             for channel in profile.channels:
                 target = channel.maximum if channel.maximum is not None else 1.0
                 target = min(target, 100.0)
@@ -79,7 +93,7 @@ class TestEncode:
 
 class TestRtuFraming:
     def _device(self) -> SimulatedDevice:
-        return SimulatedDevice(profile=loader.get("HWT901B-485"), slave_id=0x50)
+        return SimulatedDevice(profile=alt_profile(), slave_id=0x50)
 
     def _request(self, slave: int = 0x50, start: int = 0x34, count: int = 6) -> bytes:
         from qv_acq.crc import append_crc
@@ -129,8 +143,8 @@ class TestRtuFraming:
 
 
 class TestEndToEnd:
-    def test_reads_gravity_from_simulated_hwt901b(self) -> None:
-        profile = loader.get("HWT901B-485")
+    def test_reads_gravity_from_a_different_sensor_model(self) -> None:
+        profile = alt_profile()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         group = next(g for g in profile.register_groups if g.key == "inertial")
 
@@ -166,7 +180,7 @@ class TestEndToEnd:
 
     def test_two_sensor_models_share_one_bus(self) -> None:
         vibration = loader.get("WTVB01-485")
-        inertial = loader.get("HWT901B-485")
+        inertial = alt_profile()
         devices = {
             0x50: SimulatedDevice(profile=inertial, slave_id=0x50),
             0x51: SimulatedDevice(profile=vibration, slave_id=0x51),
@@ -192,7 +206,7 @@ class TestEndToEnd:
         assert "roll" not in vibration_reading.channels
 
     def test_unanswered_slave_is_flagged_bad_not_crashed(self) -> None:
-        profile = loader.get("HWT901B-485")
+        profile = alt_profile()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         group = profile.register_groups[0]
 
@@ -206,7 +220,7 @@ class TestEndToEnd:
         assert reading.error
 
     def test_total_dropout_is_survived(self) -> None:
-        profile = loader.get("HWT901B-485")
+        profile = alt_profile()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         group = profile.register_groups[0]
 
@@ -218,7 +232,7 @@ class TestEndToEnd:
         assert reading.latency_ms > 0
 
     def test_corrupt_crc_is_rejected_not_decoded(self) -> None:
-        profile = loader.get("HWT901B-485")
+        profile = alt_profile()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         group = profile.register_groups[0]
         faults = FaultInjection(crc_error_probability=1.0)
@@ -231,7 +245,7 @@ class TestEndToEnd:
         assert reading.quality is Quality.BAD
 
     def test_implausible_value_is_flagged_but_still_returned(self) -> None:
-        profile = loader.get("HWT901B-485")
+        profile = alt_profile()
         device = SimulatedDevice(
             profile=profile,
             slave_id=0x50,
@@ -252,7 +266,7 @@ class TestEndToEnd:
     def test_repeated_reads_show_the_signal_changing(self) -> None:
         import time as _time
 
-        profile = loader.get("HWT901B-485")
+        profile = alt_profile()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         group = next(g for g in profile.register_groups if g.key == "inertial")
 
