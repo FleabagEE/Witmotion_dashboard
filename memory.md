@@ -46,8 +46,21 @@ engine changes.
 - Profiles are versioned YAML validated by pydantic; code never branches on
   model name (ADR-004).
 - `verification_status` gates alarms: only `verified` may drive them (ADR-005).
-  Current state: HWT901B-485 `candidate`, WTVB01-485 `unverified`.
-- The two sensors share exactly one capability: temperature. Asserted by test.
+  **WTVB01-485 is `verified`** as of 2026-07-31, against manufacturer document
+  V260508 (firmware package Version 10059) and confirmed on hardware.
+- Verified scalings: acceleration 0x34-0x36 `raw/32768*16` g; vibration velocity
+  0x3A-0x3C `raw/100` mm/s; temperature 0x40 `raw/100` degC; displacement
+  0x41-0x43 `raw` um; dominant frequency 0x44-0x46 `raw/10` Hz; 36 condition
+  indicators 0x47-0x6A `raw/1000`; fault words 0x6B-0x6D unscaled.
+- Registers 0x37-0x39 are live but absent from the manufacturer table, so they
+  stay unmapped. 0x3D-0x3F are documented Reserved and read zero.
+- Two errors the verification gate caught, both of which would have shipped a
+  confidently wrong dashboard: 0x44-0x46 is frequency, not velocity; and velocity
+  is `raw/100`, not `raw`.
+- OPEN: VY/VZ (0x3B/0x3C) and DY/DZ (0x42/0x43) read exactly zero on the unit in
+  hand, while all three frequency axes report non-zero. Y/Z velocity and
+  displacement alarms stay disabled pending a second unit. The sensor was sitting
+  loose on a desk during testing, which may contribute.
 
 ## Measured bus capacity
 
@@ -65,7 +78,8 @@ time: 9600 to 115200 gains 4.8x, 115200 to 230400 gains 13%.
 
 - Polled Modbus is **not uniformly sampled**. Spectral features are capped at
   0.4x the measured rate; requests above that are refused with an explanation
-  (ADR-006). Machine-vibration spectra are out of scope for both sensors.
+  (ADR-006). Machine-vibration spectra are out of scope over Modbus polling; the device's own
+  condition indicators cover condition monitoring instead.
 - WTVB01-485 reports aggregates (RMS velocity, displacement, dominant
   frequency), not waveform. Trend them; do not reconstruct spectra from them.
 - Derived translational velocity/displacement is optional, off by default,
