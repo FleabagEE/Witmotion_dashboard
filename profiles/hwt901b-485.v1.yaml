@@ -1,0 +1,75 @@
+schema_version: "1.0"
+profile_version: "1.0.0"
+manufacturer: WitMotion
+model: HWT901B-485
+protocol: modbus_rtu
+
+# The WitMotion JY901/HWT901B family shares a long-standing register layout and
+# the scaling formulas below are the documented ones. They are nonetheless marked
+# "candidate" until confirmed against the connected unit with tools/probe.py,
+# because firmware variants differ in which optional blocks are populated.
+verification_status: candidate
+verification_notes: >-
+  Addresses follow the published WitMotion register table for the HWT901B/JY901
+  family. Confirm on hardware before enabling alarms. Pressure and altitude
+  registers are intentionally absent: they exist only on barometric variants and
+  must not be exposed unless the connected unit is confirmed to populate them.
+
+serial:
+  baud: 9600
+  default_slave_id: 0x50
+  turnaround_ms: 5.0
+  supported_bauds: [4800, 9600, 19200, 38400, 57600, 115200, 230400]
+
+register_groups:
+  - key: inertial
+    label: Acceleration and angular velocity
+    function_code: 3
+    default_poll_hz: 20
+    channels:
+      # Acceleration: raw / 32768 * 16 g. A stationary unit reads ~1 g on the
+      # vertical axis - that is gravity, not motion.
+      - {key: accel_x, label: Acceleration X, quantity: acceleration, unit: g, address: 0x34, scale: 0.00048828125, minimum: -16, maximum: 16}
+      - {key: accel_y, label: Acceleration Y, quantity: acceleration, unit: g, address: 0x35, scale: 0.00048828125, minimum: -16, maximum: 16}
+      - {key: accel_z, label: Acceleration Z, quantity: acceleration, unit: g, address: 0x36, scale: 0.00048828125, minimum: -16, maximum: 16}
+      # Angular velocity: raw / 32768 * 2000 deg/s. NOT translational velocity.
+      - {key: gyro_x, label: Angular velocity X, quantity: angular_velocity, unit: deg/s, address: 0x37, scale: 0.06103515625, minimum: -2000, maximum: 2000}
+      - {key: gyro_y, label: Angular velocity Y, quantity: angular_velocity, unit: deg/s, address: 0x38, scale: 0.06103515625, minimum: -2000, maximum: 2000}
+      - {key: gyro_z, label: Angular velocity Z, quantity: angular_velocity, unit: deg/s, address: 0x39, scale: 0.06103515625, minimum: -2000, maximum: 2000}
+
+  - key: attitude
+    label: Magnetic field, attitude and temperature
+    function_code: 3
+    default_poll_hz: 10
+    channels:
+      - {key: mag_x, label: Magnetic field X, quantity: magnetic_field, unit: LSB, address: 0x3A, notes: "Raw LSB; convert only after per-site magnetic calibration."}
+      - {key: mag_y, label: Magnetic field Y, quantity: magnetic_field, unit: LSB, address: 0x3B, notes: "Raw LSB; convert only after per-site magnetic calibration."}
+      - {key: mag_z, label: Magnetic field Z, quantity: magnetic_field, unit: LSB, address: 0x3C, notes: "Raw LSB; convert only after per-site magnetic calibration."}
+      # Attitude: raw / 32768 * 180 deg.
+      - {key: roll, label: Roll, quantity: attitude_angle, unit: deg, address: 0x3D, scale: 0.0054931640625, minimum: -180, maximum: 180}
+      - {key: pitch, label: Pitch, quantity: attitude_angle, unit: deg, address: 0x3E, scale: 0.0054931640625, minimum: -90, maximum: 90}
+      - {key: yaw, label: Yaw, quantity: attitude_angle, unit: deg, address: 0x3F, scale: 0.0054931640625, minimum: -180, maximum: 180, notes: "Magnetically referenced in 9-axis mode; drifts in 6-axis mode."}
+      - {key: temperature, label: Temperature, quantity: temperature, unit: degC, address: 0x40, scale: 0.01, minimum: -40, maximum: 125}
+
+  - key: quaternion
+    label: Orientation quaternion
+    function_code: 3
+    default_poll_hz: 10
+    channels:
+      - {key: q0, label: Quaternion q0, quantity: quaternion, unit: "1", address: 0x51, scale: 0.000030517578125, minimum: -1, maximum: 1}
+      - {key: q1, label: Quaternion q1, quantity: quaternion, unit: "1", address: 0x52, scale: 0.000030517578125, minimum: -1, maximum: 1}
+      - {key: q2, label: Quaternion q2, quantity: quaternion, unit: "1", address: 0x53, scale: 0.000030517578125, minimum: -1, maximum: 1}
+      - {key: q3, label: Quaternion q3, quantity: quaternion, unit: "1", address: 0x54, scale: 0.000030517578125, minimum: -1, maximum: 1}
+
+protected_commands:
+  - {key: save_config, label: Save configuration, address: 0x00, requires_step_up: true, description: "Persists settings to flash. Never issued during discovery."}
+  - {key: calibration_mode, label: Calibration mode, address: 0x01, requires_step_up: true, description: "Enters accelerometer or magnetic calibration. Operator-initiated only."}
+  - {key: set_baud, label: Change baud rate, address: 0x04, requires_step_up: true, description: "Changing baud will drop the bus until the poller reconnects."}
+  - {key: set_slave_id, label: Change Modbus address, address: 0x1A, requires_step_up: true, description: "Risk of address collision on a multi-drop bus."}
+
+limitations:
+  - "Gravity contributes approximately 1 g on the vertical axis when stationary."
+  - "Yaw is affected by motors, iron, strong AC fields and magnets; magnetic calibration may be required per installation."
+  - "In 6-axis mode yaw accumulates integration drift and has no absolute reference."
+  - "GX/GY/GZ are angular velocity, not translational velocity."
+  - "Translational velocity and displacement are not native measurements; if derived from acceleration they must be labelled derived and carry uncertainty."
