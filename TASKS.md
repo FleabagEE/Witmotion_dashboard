@@ -63,7 +63,9 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Sanctum appliance tokens | done | DevSecOps | skeleton | ingest-only ability enforced | `appliance:token` |
 | TimescaleDB policies | done | Backend | DB design | Compression, retention, rollup registered | verified in catalog |
 | Alarm engine | done | Backend | ingestion | 22 tests: hysteresis, persistence, latching | `AlarmEvaluator` |
-| Alarm conditions beyond threshold | todo | Backend | alarm engine | Rate-of-change, offline, stale | — |
+| Sensor liveness alarms | done | Backend | alarm engine | 7 tests + live failure drill | `alarms:sweep` |
+| Alarm evaluation on ingest | done | Backend | alarm engine | Wired outside the ingest transaction | `IngestService` |
+| Rate-of-change and baseline alarms | todo | Signal | alarm engine | Needs running-machine baseline | — |
 | Notifications | todo | Backend | alarms | Delivery-status tests | — |
 | Reports (PDF/CSV) | todo | Backend | alarms | Reproducibility test | — |
 | Audit trail | todo | DevSecOps | auth | Coverage test | — |

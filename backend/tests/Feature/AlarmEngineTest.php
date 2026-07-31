@@ -330,4 +330,106 @@ class AlarmEngineTest extends TestCase
         $this->feed(8.5, 15);
         $this->assertSame('critical', $this->openEvent()->level);
     }
+
+    // ---- liveness -------------------------------------------------------
+
+    private function livenessDefinition(array $overrides = []): AlarmDefinition
+    {
+        return AlarmDefinition::create(array_merge([
+            'key' => 'test-liveness', 'name' => 'Sensor silent',
+            'sensor_id' => $this->sensor->id, 'condition_type' => 'sensor_offline',
+            'unit' => 'seconds', 'advisory_at' => 60, 'warning_at' => 300, 'critical_at' => 900,
+            'hysteresis' => 0, 'persistence_seconds' => 0, 'clear_seconds' => 0,
+            'debounce_seconds' => 0, 'latching' => false, 'enabled' => true,
+            'requires_verified_profile' => false,
+        ], $overrides));
+    }
+
+    public function test_a_silent_sensor_raises_a_liveness_alarm(): void
+    {
+        $this->livenessDefinition();
+        $this->sensor->update(['last_measurement_at' => $this->t0]);
+
+        // Six minutes of silence: past the warning threshold.
+        $this->evaluator->evaluateLiveness($this->sensor->fresh(), $this->t0->copy()->addMinutes(6));
+
+        $event = $this->openEvent();
+        $this->assertNotNull($event, 'silence must be noticed; nothing else will report it');
+        $this->assertSame('warning', $event->level);
+        $this->assertSame('seconds', $event->unit);
+    }
+
+    public function test_a_reporting_sensor_raises_nothing(): void
+    {
+        $this->livenessDefinition();
+        $this->sensor->update(['last_measurement_at' => $this->t0]);
+
+        $this->evaluator->evaluateLiveness($this->sensor->fresh(), $this->t0->copy()->addSeconds(5));
+
+        $this->assertNull($this->openEvent());
+    }
+
+    public function test_liveness_clears_when_data_resumes(): void
+    {
+        $this->livenessDefinition();
+        $this->sensor->update(['last_measurement_at' => $this->t0]);
+        $this->evaluator->evaluateLiveness($this->sensor->fresh(), $this->t0->copy()->addMinutes(6));
+        $this->assertSame('warning', $this->openEvent()->level);
+
+        // Data arrives again.
+        $this->sensor->update(['last_measurement_at' => $this->t0->copy()->addMinutes(10)]);
+        $this->evaluator->evaluateLiveness($this->sensor->fresh(), $this->t0->copy()->addMinutes(10));
+
+        $this->assertSame('cleared', $this->openEvent()->state);
+    }
+
+    public function test_a_sensor_that_never_reported_does_not_alarm(): void
+    {
+        $this->livenessDefinition();
+        $this->sensor->update(['last_measurement_at' => null]);
+
+        $this->evaluator->evaluateLiveness($this->sensor->fresh(), $this->t0->copy()->addDays(1));
+
+        // Configured but never wired is not the same as having gone quiet, and
+        // paging for it on every fresh install would train operators to ignore
+        // the alarm that matters.
+        $this->assertNull($this->openEvent());
+    }
+
+    public function test_liveness_does_not_require_a_verified_profile(): void
+    {
+        $this->livenessDefinition();
+        $this->sensor->model->update(['verification_status' => 'candidate']);
+        $this->sensor->update(['last_measurement_at' => $this->t0]);
+
+        $this->evaluator->evaluateLiveness($this->sensor->fresh(), $this->t0->copy()->addMinutes(6));
+
+        // Whether a sensor is talking has nothing to do with whether its
+        // register map has been confirmed.
+        $this->assertNotNull($this->openEvent());
+    }
+
+    public function test_liveness_thresholds_derive_from_the_slowest_channel(): void
+    {
+        Channel::where('sensor_id', $this->sensor->id)->update(['configured_hz' => 0.2]);
+        $definition = $this->evaluator->provisionLivenessDefaults($this->sensor->fresh());
+
+        // Slowest channel is one poll every 5 s, so five missed polls is 25 s -
+        // floored at 30 s so a slow group never looks offline between polls.
+        $this->assertSame(30.0, $definition->advisory_at);
+        $this->assertSame(120.0, $definition->warning_at);
+        $this->assertSame('liveness_derived', $definition->source);
+        $this->assertFalse($definition->requires_verified_profile);
+    }
+
+    public function test_sweep_command_evaluates_liveness(): void
+    {
+        $this->livenessDefinition();
+        $this->sensor->update(['last_measurement_at' => now()->subHour()]);
+
+        $this->artisan('alarms:sweep')->assertSuccessful();
+
+        $this->assertNotNull($this->openEvent());
+        $this->assertSame('critical', $this->openEvent()->level);
+    }
 }

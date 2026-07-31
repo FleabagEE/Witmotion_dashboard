@@ -255,6 +255,105 @@ class AlarmEvaluator
         return 'normal';
     }
 
+    /**
+     * Evaluate liveness conditions for one sensor.
+     *
+     * A sensor that stops answering produces no measurements, so nothing would
+     * ever trigger an evaluation. This is driven by a sweep instead, and it
+     * matters more than any threshold alarm: silence is indistinguishable from
+     * "everything is fine" unless something actively looks for it.
+     *
+     * Expressed as seconds-since-last-data fed through the same threshold
+     * machinery, so hysteresis, persistence, debounce and latching all apply
+     * without a second implementation.
+     *
+     * @return array<int, AlarmEvent>
+     */
+    public function evaluateLiveness(Sensor $sensor, ?Carbon $now = null): array
+    {
+        $now ??= now();
+        $last = $sensor->last_measurement_at;
+        $silentFor = $last === null
+            ? null
+            : max(0.0, (float) $last->diffInSeconds($now, absolute: true));
+
+        $changed = [];
+        foreach ($this->livenessDefinitionsFor($sensor) as $definition) {
+            if ($silentFor === null) {
+                // Never reported at all. Not the same as having gone quiet, and
+                // alarming on it would page somebody for every sensor that has
+                // been configured but not yet wired.
+                continue;
+            }
+            $event = $this->applyDefinition(
+                $definition, $sensor, $definition->channel_key ?? '__sensor__',
+                $silentFor, 'seconds', $now,
+            );
+            if ($event !== null) {
+                $changed[] = $event;
+            }
+        }
+
+        return $changed;
+    }
+
+    /** @return iterable<AlarmDefinition> */
+    private function livenessDefinitionsFor(Sensor $sensor): iterable
+    {
+        $definitions = AlarmDefinition::query()
+            ->where('enabled', true)
+            ->where('condition_type', 'sensor_offline')
+            ->where(fn ($q) => $q->whereNull('sensor_id')->orWhere('sensor_id', $sensor->id))
+            ->where(fn ($q) => $q->whereNull('asset_id')->orWhere('asset_id', $sensor->asset_id))
+            ->get();
+
+        foreach ($definitions as $definition) {
+            // Liveness deliberately ignores requires_verified_profile: whether a
+            // sensor is talking at all has nothing to do with whether its
+            // register map has been confirmed.
+            yield $definition;
+        }
+    }
+
+    /**
+     * Default liveness alarm for a sensor, derived from its actual poll rates.
+     *
+     * Thresholds come from the slowest configured channel, so a group polled
+     * once a minute does not look offline between polls.
+     */
+    public function provisionLivenessDefaults(Sensor $sensor): AlarmDefinition
+    {
+        $slowestHz = (float) ($sensor->channels()->whereNotNull('configured_hz')->min('configured_hz') ?: 1.0);
+        $period = $slowestHz > 0 ? 1.0 / $slowestHz : 1.0;
+        $advisory = max(30.0, $period * 5);
+
+        return AlarmDefinition::updateOrCreate(
+            ['key' => "liveness:sensor:{$sensor->id}"],
+            [
+                'name' => "Sensor silent - {$sensor->sensor_id}",
+                'description' => sprintf(
+                    'Raises when no measurement has arrived. Derived from the slowest configured '
+                    .'channel (%.3f Hz, one poll every %.1f s).', $slowestHz, $period,
+                ),
+                'sensor_id' => $sensor->id,
+                'condition_type' => 'sensor_offline',
+                'unit' => 'seconds',
+                'advisory_at' => round($advisory, 1),
+                'warning_at' => round($advisory * 4, 1),
+                'critical_at' => round($advisory * 12, 1),
+                'hysteresis' => round($advisory * 0.2, 1),
+                'persistence_seconds' => 0,
+                'clear_seconds' => 0,
+                'debounce_seconds' => 0,
+                'latching' => false,
+                'enabled' => true,
+                'requires_verified_profile' => false,
+                'source' => 'liveness_derived',
+                'parameters' => ['slowest_hz' => $slowestHz],
+            ],
+        );
+    }
+
     public function acknowledge(AlarmEvent $event, ?int $userId, ?string $note = null): AlarmEvent
     {
         $event->acknowledged_at = now();

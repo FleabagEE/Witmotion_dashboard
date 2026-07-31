@@ -6,6 +6,7 @@ use App\Models\Appliance;
 use App\Models\Channel;
 use App\Models\Sensor;
 use App\Models\SensorModel;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -30,6 +31,12 @@ class IngestService
 
     private array $sensorCache = [];
     private array $channelCache = [];
+    /** Latest reading per (sensor, channel) in this batch, for alarm evaluation. */
+    private array $latest = [];
+
+    public function __construct(private readonly AlarmEvaluator $alarms)
+    {
+    }
 
     public function ingestBatch(array $envelopes, string $batchUid, ?string $sourceIp = null): array
     {
@@ -79,6 +86,7 @@ class IngestService
 
                 $pollId = DB::table('ingested_polls')->where('idempotency_key', $key)->value('id');
                 $sensor = $this->resolveSensor($envelope);
+                $sensor->last_measurement_at = Carbon::parse($envelope['timestamp_utc']);
 
                 foreach ($envelope['measurements'] as $channelKey => $reading) {
                     $channel = $this->resolveChannel($sensor, $envelope['group'], $channelKey, $reading);
@@ -99,6 +107,18 @@ class IngestService
                         'profile_version' => $envelope['profile_version'] ?? null,
                         'ingested_at' => now(),
                     ];
+
+                    // Alarms are evaluated once per channel after the batch
+                    // commits, not once per row: bounded by distinct channels
+                    // (tens) rather than by rows (hundreds).
+                    $this->latest[$sensor->id.'|'.$channelKey] = [
+                        'sensor' => $sensor,
+                        'channel_key' => $channelKey,
+                        'value' => $reading['value'] ?? null,
+                        'unit' => $reading['unit'] ?? null,
+                        'quality' => $reading['quality'] ?? 'good',
+                        'at' => Carbon::parse($envelope['timestamp_utc']),
+                    ];
                 }
 
                 $accepted++;
@@ -106,6 +126,12 @@ class IngestService
 
             foreach (array_chunk($rows, 500) as $chunk) {
                 DB::table('measurements')->insert($chunk);
+            }
+
+            foreach ($this->sensorCache as $cached) {
+                if ($cached->isDirty('last_measurement_at')) {
+                    $cached->save();
+                }
             }
 
             $this->touchAppliances(array_keys($applianceIds), $envelopes);
@@ -126,14 +152,53 @@ class IngestService
             'received_at' => now(),
         ]);
 
+        $raised = $this->evaluateAlarms();
+
         return [
             'batch_uid' => $batchUid,
+            'alarms_changed' => $raised,
             'offered' => $offered,
             'accepted' => $accepted,
             'duplicates' => $duplicates,
             'rejected' => $rejected,
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * Evaluate alarms for every channel touched by this batch.
+     *
+     * Deliberately outside the ingest transaction. Measurements are already
+     * durably stored by this point, and an alarm-engine fault must never roll
+     * back data that arrived correctly - losing the reading is far worse than
+     * missing one evaluation, which the next batch will redo anyway.
+     */
+    private function evaluateAlarms(): int
+    {
+        $changed = 0;
+        foreach ($this->latest as $reading) {
+            try {
+                $sensor = $reading['sensor']->loadMissing('channels', 'model');
+                $events = $this->alarms->evaluate(
+                    $sensor,
+                    $reading['channel_key'],
+                    $reading['value'] === null ? null : (float) $reading['value'],
+                    $reading['unit'],
+                    $reading['at'],
+                    $reading['quality'],
+                );
+                $changed += count($events);
+            } catch (\Throwable $exception) {
+                Log::error('alarm evaluation failed', [
+                    'sensor_id' => $reading['sensor']->sensor_id ?? null,
+                    'channel' => $reading['channel_key'],
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+        $this->latest = [];
+
+        return $changed;
     }
 
     /**
