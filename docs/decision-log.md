@@ -184,3 +184,45 @@ project does not control, so ours is published on 6380 instead.
 
 **Cost.** Two Redis instances on one development machine. On a real appliance
 there is only one, and the port is configuration.
+
+---
+
+## ADR-012 — ISO 10816 limits live on the asset, and are defaults not baselines
+
+**Decision.** The machine class sits on the asset. Alarm definitions derived from
+it record `source: iso10816` (or `iso10816_inferred` when the class was guessed
+from rated power), and every derived definition says so in its description.
+
+**Context.** The standard's zone boundaries depend on machine size and mounting
+stiffness, not on the sensor. A sensor moved from a 5 kW pump to a 200 kW
+compressor must inherit different limits without being reconfigured. Mapping is
+advisory at the A/B boundary, warning at B/C, critical at C/D - a machine in
+zone B is fine, so advisory means "no longer as-new", not "something is wrong".
+
+**Cost.** These are class defaults, not a baseline measured on the specific
+machine, and they will be wrong for unusual installations. Where a real baseline
+exists, deviation-from-baseline is the better rule. Rated power alone cannot
+determine mounting stiffness, so an inferred class is labelled as inferred rather
+than presented as fact.
+
+---
+
+## ADR-013 — Alarm state machine: persistence, hysteresis, debounce, latching
+
+**Decision.** Every alarm definition carries hysteresis, separate raise and clear
+persistence windows, a debounce interval, and a latching flag.
+
+**Context.** Deciding that 8.2 exceeds 7.1 is the easy part. Without hysteresis a
+value resting on a boundary raises and clears endlessly; without persistence a
+single noisy sample pages somebody at 03:00; without debounce a flapping input
+produces a transition storm; without latching a transient excursion disappears
+before anyone sees it. Raise and clear budgets are separate because operators
+generally want a fast raise and a slow clear.
+
+**Cost.** More state per alarm, and a genuinely more complex evaluator. The
+candidate level and its timestamp are stored so a partially satisfied condition
+survives a restart rather than resetting its countdown.
+
+A failed read never alarms. A null value with 'bad' quality is not a low
+reading - nothing was measured. Sensor liveness is a separate condition type, so
+that a dead sensor reports as dead rather than as a healthy machine.

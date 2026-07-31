@@ -62,7 +62,8 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Forwarder systemd unit | done | DevSecOps | forwarder | Runs under systemd, backlog 0 sustained | `quakevault-forwarder.service` |
 | Sanctum appliance tokens | done | DevSecOps | skeleton | ingest-only ability enforced | `appliance:token` |
 | TimescaleDB policies | done | Backend | DB design | Compression, retention, rollup registered | verified in catalog |
-| Alarm engine | todo | Backend | ingestion | Hysteresis/debounce tests | — |
+| Alarm engine | done | Backend | ingestion | 22 tests: hysteresis, persistence, latching | `AlarmEvaluator` |
+| Alarm conditions beyond threshold | todo | Backend | alarm engine | Rate-of-change, offline, stale | — |
 | Notifications | todo | Backend | alarms | Delivery-status tests | — |
 | Reports (PDF/CSV) | todo | Backend | alarms | Reproducibility test | — |
 | Audit trail | todo | DevSecOps | auth | Coverage test | — |
