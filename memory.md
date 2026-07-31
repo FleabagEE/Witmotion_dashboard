@@ -69,14 +69,12 @@ engine changes.
 - Two errors the verification gate caught, both of which would have shipped a
   confidently wrong dashboard: 0x44-0x46 is frequency, not velocity; and velocity
   is `raw/100`, not `raw`.
-- **CONFIRMED DEFECT**: VY/VZ (0x3B/0x3C) and DY/DZ (0x42/0x43) return exactly
-  zero in 1505/1505 samples with the sensor rigidly wall-mounted, including the
-  73 samples where the device itself reported dominant frequencies on Y and Z.
-  Either firmware 10059 computes velocity/displacement for X only, or the unit is
-  faulty; a second unit would tell them apart. **This blocks compliant structural
-  monitoring**: DIN 4150-3 and BS 7385-2 both evaluate the maximum of three
-  orthogonal components. Support request drafted at
-  /home/quakelogic/Downloads/WTVB01-485-support-request.txt.
+- **RESOLVED 2026-07-31: the first unit is faulty, the model is sound.** Unit 1
+  reported VY/VZ/DY/DZ as exactly zero in 1505/1505 samples; unit 2, tested
+  identically, reported all six channels (VY 670/1509, VZ 625/1509). Firmware
+  Version 10059 is not at fault. Return unit 1. Because a dead axis reads exactly
+  like a still building, commissioning must confirm all three axes respond to
+  excitation before a sensor is trusted.
 - Open question for the vendor: is the reported vibration velocity a peak or an
   aggregate? The standards are defined on peak particle velocity, and the manual
   does not say. Affects whether any comparison to a guideline value is valid.

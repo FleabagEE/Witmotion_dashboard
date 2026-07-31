@@ -37,7 +37,8 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Create `quakevault-acq` service account | done | DevSecOps | root access | Account exists, opens port | uid 995, dialout only |
 | udev stable adapter naming | done | DevSecOps | service account | Alias resolves after trigger | `/dev/quakevault-rs485-a` |
 | Verify WTVB01-485 register map | done | Controls | dialout, probe, manual | Manual V260508 + hardware, 20 fixtures | **verified** |
-| Resolve VY/VZ/DY/DZ reading zero | todo | Controls | second unit | Compare against a 2nd WTVB01 | Open issue |
+| Resolve VY/VZ/DY/DZ reading zero | done | Controls | second unit | Two units compared, 140 s each | Unit 1 faulty; model sound |
+| Three-axis check in commissioning | todo | QA | acceptance | Confirm all axes respond before trust | A dead axis reads as a still building |
 | Model 0x47-0x6A statistical features | todo | Signal | manual 10.4.11-10.4.17 | Fixtures per channel | — |
 
 | CRC-level fault injection in simulator | done | QA | simulator | Corrupt frames rejected, not decoded | `rtu.py` |
@@ -96,9 +97,8 @@ Status: `todo` | `in progress` | `blocked` | `done`
 
 ## Blocked — operator action required
 
-1. Send the WitMotion support request (drafted at
-   ~/Downloads/WTVB01-485-support-request.txt) and obtain a second WTVB01-485.
-   Until Y/Z velocity works, compliant structural monitoring is not possible.
+1. Return the faulty first unit under warranty (RMA text drafted at
+   ~/Downloads/WTVB01-485-RMA-request.txt).
 2. Supply DIN 4150-3 and/or BS 7385-2 standard text so the guideline tables can
    be promoted from candidate to verified.
 3. Confirm structure class, measurement position, and whether the concern is

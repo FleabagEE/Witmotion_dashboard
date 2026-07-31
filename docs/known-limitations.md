@@ -74,11 +74,14 @@ those; the polling limit only constrains what we can reconstruct ourselves.
 The deployment target is structural (ADR-014), governed by DIN 4150-3 and
 BS 7385-2. Two hardware facts limit what may honestly be claimed against them.
 
-**Single axis.** Both standards evaluate the maximum of three orthogonal
-component velocities. The WTVB01-485 in hand reports vibration velocity on the X
-axis only - a confirmed device defect, see `register-maps.md`. A compliant
-assessment cannot be produced until that is resolved with the manufacturer or a
-working unit.
+**Per-unit axis verification.** Both standards evaluate the maximum of three
+orthogonal component velocities. A healthy WTVB01-485 supplies all three - proven
+on a second unit - but the first unit tested reported Y and Z velocity as exactly
+zero in 1505 consecutive samples while its own frequency estimator showed energy
+on those axes. That failure is silent: nothing about a dead axis looks like an
+error, it looks like a still building. Commissioning must therefore confirm all
+three axes respond to excitation before a sensor is trusted, and that check
+belongs in the acceptance procedure, not in someone's memory.
 
 **Aggregate velocity, not peak.** The standards are defined on peak particle
 velocity. The WTVB01 reports an aggregated value whose relationship to peak is

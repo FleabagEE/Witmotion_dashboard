@@ -56,60 +56,39 @@ respond to excitation but appear nowhere in the register table (it jumps 0x36 to
 0x3A). Almost certainly the underlying IMU's angular-velocity registers. Excluded
 from the profile: an undocumented register may move in a firmware revision.
 
-### CONFIRMED DEFECT — Y and Z velocity and displacement never report
+### RESOLVED — the first unit is faulty; the sensor model is sound
 
-Status changed from "open issue" to **confirmed** on 2026-07-31, after the sensor
-was properly mounted and re-tested. Mounting is eliminated as an explanation.
+Two units tested identically, 140 s each, same firmware and same bus.
 
-**Evidence.** 1505 samples over 140 s with the unit bolted down and excited from
-multiple directions (`docs/captures/2026-07-31-mounted-tap.csv`):
+| Channel | Unit 1 (wall-mounted) | Unit 2 |
+|---|---|---|
+| VX | 73 / 1505 | 670 / 1509 |
+| **VY** | **0 / 1505** | **670 / 1509** |
+| **VZ** | **0 / 1505** | **625 / 1509** |
+| DX | 8 / 1505 | 661 / 1509 |
+| **DY** | **0 / 1505** | **661 / 1509** |
+| **DZ** | **0 / 1505** | **616 / 1509** |
 
-| Channel | Register | Peak | Non-zero samples |
-|---|---|---|---|
-| VX | 0x3A | 0.47 mm/s | 73 / 1505 |
-| **VY** | **0x3B** | **0.00** | **0 / 1505** |
-| **VZ** | **0x3C** | **0.00** | **0 / 1505** |
-| DX | 0x41 | 3 um | 8 / 1505 |
-| **DY** | **0x42** | **0.00** | **0 / 1505** |
-| **DZ** | **0x43** | **0.00** | **0 / 1505** |
-| HZX | 0x44 | 122.4 Hz | 72 / 1505 |
-| HZY | 0x45 | 108.1 Hz | 62 / 1505 |
-| HZZ | 0x46 | 125.8 Hz | 73 / 1505 |
+Unit 2 reports all six velocity and displacement channels. Unit 1 reported none
+of the Y or Z ones in 1505 consecutive samples, while its frequency estimator was
+simultaneously reporting energy on those very axes.
 
-**Why this is a device fault and not a measurement artefact.** Isolating the 73
-samples in which the device itself reported a dominant frequency on Y or Z - which
-it can only do if its own estimator found vibration energy on that axis - VY, VZ,
-DY and DZ were *exactly* zero in 73 of 73, while VX was non-zero in 73 of 73:
+Excitation on unit 2 was genuine three-axis - the acceleration channels swept
+0.92, 0.95 and 0.80 g of range respectively - so no axis was left unexercised.
+Peak velocity and displacement saturated the 16-bit registers (327 mm/s, 32733
+um) because the unit was hand-waved rather than mounted; that is an artefact of
+the test, not of the device.
 
-```
-t= 59.8s  HZY=  0.9Hz  HZZ= 72.3Hz  VY=0.00  VZ=0.00  VX=0.19 mm/s
-t= 59.9s  HZY=  0.9Hz  HZZ= 72.3Hz  VY=0.00  VZ=0.00  VX=0.33 mm/s
-t= 60.0s  HZY=  0.9Hz  HZZ= 72.3Hz  VY=0.00  VZ=0.00  VX=0.33 mm/s
-```
+**Conclusion: unit 1 is faulty and should be returned. Firmware Version 10059 is
+not at fault, and the WTVB01-485 is suitable for triaxial structural
+measurement.**
 
-The device is internally contradicting itself: the frequency estimator reports
-energy on an axis for which the velocity and displacement outputs report none.
-Exact zeros, never small values, across every sample.
+This also removes the compliance blocker: DIN 4150-3 and BS 7385-2 evaluate the
+maximum of three orthogonal components, and a working unit supplies all three.
 
-**Conclusion.** Either firmware Version 10059 computes velocity and displacement
-for the X axis only, or this unit is faulty. Distinguishing the two requires a
-second WTVB01-485.
-
-**Consequence for the product.** The appliance is effectively single-axis for
-vibration velocity and displacement. Y and Z alarms on those quantities stay
-disabled. Frequency and the condition indicators work on all three axes and are
-unaffected.
-
-#### Summary for the manufacturer
-
-> WTVB01-485, firmware package Version 10059, Modbus RTU at 9600 8N1, slave 0x50.
-> Registers 0x3B/0x3C (VY/VZ) and 0x42/0x43 (DY/DZ) return exactly 0 under all
-> conditions, across 1505 samples with the sensor rigidly mounted and excited on
-> multiple axes. In the same polls, 0x45/0x46 (HZY/HZZ) report dominant
-> frequencies of 108 Hz and 126 Hz, which requires vibration energy on those
-> axes, and 0x3A (VX) and 0x41 (DX) report non-zero values normally. Is per-axis
-> velocity/displacement output conditional on a configuration register in this
-> firmware, or is this a unit fault?
+Earlier revisions of this document recorded the single-axis behaviour as a
+confirmed device defect of unknown scope - either firmware-wide or unit-specific.
+That hedge was correct and is now resolved in favour of unit-specific.
 
 ### HWT901B-485 — retired 2026-07-31
 

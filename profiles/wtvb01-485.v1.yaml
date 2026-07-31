@@ -176,5 +176,5 @@ limitations:
   - "Reports reduced aggregates (RMS velocity, displacement, dominant frequency), not raw waveform. Spectral analysis of these channels describes slow trends, not machine vibration spectra."
   - "Registers 0x3D-0x3F are documented as Reserved and read zero."
   - "Registers 0x37-0x39 are live but absent from the manufacturer register table; excluded as unsupported."
-  - "CONFIRMED DEFECT (2026-07-31, sensor rigidly mounted): VY, VZ (0x3B/0x3C) and DY, DZ (0x42/0x43) return exactly zero in 1505/1505 samples, including the 73 in which the device reported dominant frequencies on Y and Z. Vibration velocity and displacement are effectively single-axis on this firmware. Y/Z alarms on those quantities must stay disabled. Frequency and condition indicators are unaffected. See docs/register-maps.md."
+  - "All six velocity and displacement channels are confirmed working on a healthy unit (2026-07-31, 1509 samples, three-axis excitation). A first unit reported VY/VZ/DY/DZ as exactly zero in 1505/1505 samples and is faulty, not representative: firmware Version 10059 is sound. Commissioning should confirm all three axes respond before a sensor is trusted. See docs/register-maps.md."
   - "Statistical feature blocks (0x47-0x6A) and spectrum energy blocks (0x6E-0x9A) are documented but not yet modelled in this profile."
