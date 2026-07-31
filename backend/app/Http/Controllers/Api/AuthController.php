@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AuditLogger;
 use App\Support\Roles;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,10 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public function __construct(private readonly AuditLogger $audit)
+    {
+    }
+
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -35,6 +40,10 @@ class AuthController extends Controller
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             RateLimiter::hit($key, 300);
+            $this->audit->recordFailure(
+                'auth.login', 'Failed sign-in for '.$data['email'], $request,
+                'user', $user?->id === null ? null : (string) $user->id,
+            );
             // Deliberately identical for unknown email and wrong password: the
             // difference tells an attacker which accounts exist.
             throw ValidationException::withMessages([
@@ -44,6 +53,9 @@ class AuthController extends Controller
 
         if (! $user->active) {
             RateLimiter::hit($key, 300);
+            $this->audit->recordFailure(
+                'auth.login', 'Sign-in refused: account disabled', $request, 'user', (string) $user->id,
+            );
             throw ValidationException::withMessages(['email' => 'This account is disabled.']);
         }
 
@@ -52,6 +64,13 @@ class AuthController extends Controller
 
         $abilities = Roles::abilitiesFor($user->role);
         $token = $user->createToken($data['device_name'] ?? 'dashboard', $abilities);
+        $this->audit->record(
+            action: 'auth.login',
+            subjectType: 'user',
+            subjectId: (string) $user->id,
+            summary: "Signed in as {$user->role}",
+            request: $request,
+        );
 
         return response()->json([
             'token' => $token->plainTextToken,
@@ -78,6 +97,12 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
+        $this->audit->record(
+            action: 'auth.logout',
+            subjectType: 'user',
+            subjectId: (string) $request->user()->id,
+            request: $request,
+        );
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['status' => 'signed out']);

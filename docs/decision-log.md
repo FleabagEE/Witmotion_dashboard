@@ -299,3 +299,50 @@ nothing for a human to check them against.
 That is the intended behaviour: it forces the question of who owns the numbers to
 be answered before the product is relied upon, rather than after an incident.
 `alarms:confirm-thresholds --list` shows exactly what is outstanding.
+
+---
+
+## ADR-016 — The audit trail is append-only in the database, not by convention
+
+**Decision.** `audit_events` carries a `BEFORE UPDATE OR DELETE` trigger that
+raises. There is no Eloquent model for it, so there is no `->update()` or
+`->delete()` for anybody to reach for either.
+
+**Context.** An audit trail that the application can edit is not evidence. A bug,
+a careless migration or a compromised web account could otherwise rewrite history
+silently. Removing the log wholesale still requires DDL rights, which the
+application database user should not hold in production.
+
+Actor name and role are denormalised onto each row, so a record stays readable
+after the account is renamed or deleted.
+
+**Cost.** Audit rows cannot be corrected, only superseded. That is the intended
+property.
+
+---
+
+## ADR-017 — Notification value is in what it refuses to send
+
+**Decision.** Every notification passes four gates - provisional status, severity
+floor, deduplication, rate ceiling - plus quiet hours, and every suppression is
+recorded with its reason.
+
+**Context.** A system that floods people is worse than one that stays silent: a
+flooded channel gets muted, and then the message that mattered is missed too. So
+a repeat of the same condition is dropped, a flapping input cannot exceed the
+hourly ceiling, and quiet hours hold everything except critical - because a
+critical alarm at 3am is exactly what somebody signed up for.
+
+Alarms raised from unconfirmed thresholds never notify at all (ADR-015). They
+appear on the dashboard; that is the extent of what unverified numbers have
+earned.
+
+Notification fires on escalation only. Telling somebody an alarm became less
+severe, or cleared itself, is noise the dashboard already shows.
+
+**Cost.** Suppression means somebody can ask "why was I not told". Every
+suppressed delivery is therefore stored with its reason rather than discarded, so
+that question always has an answer.
+
+Escalation targets are marked `escalation_only` and excluded from first dispatch.
+Without that, escalating merely tells the same person twice.
