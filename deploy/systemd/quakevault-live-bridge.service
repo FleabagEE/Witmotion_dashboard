@@ -1,0 +1,55 @@
+[Unit]
+Description=QuakeVault live feed bridge (Redis to websockets)
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+After=network-online.target quakevault-reverb.service
+Wants=network-online.target quakevault-reverb.service
+# Wants, not Requires: if Reverb is down this process should keep running and
+# reconnect rather than exit. Either way the dashboard falls back to polling.
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/quakevault-industrial/backend
+
+# Subscribes to the acquisition service's live channel and relays each frame
+# onto websockets, capped per sensor and group. The cap is what a browser can
+# actually render; pushing every frame would spend the client's main thread on
+# work nobody can see.
+ExecStart=/usr/bin/php artisan live:bridge --max-hz=15
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+# --- hardening ---------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged ~@resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+
+ReadWritePaths=/var/www/quakevault-industrial/backend/storage
+ReadWritePaths=/var/www/quakevault-industrial/backend/bootstrap/cache
+
+[Install]
+WantedBy=multi-user.target

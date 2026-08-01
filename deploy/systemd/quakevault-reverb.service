@@ -1,0 +1,57 @@
+[Unit]
+Description=QuakeVault websocket server (Reverb)
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+After=network-online.target
+Wants=network-online.target
+# Deliberately NOT Requires= by anything: the live view is a convenience. If
+# this is down the dashboard falls back to polling the stored series, which is
+# slower and complete. Nothing about acquisition, alarms or reporting depends
+# on it.
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/quakevault-industrial/backend
+
+# Port 9080, not Reverb's default 8080, which is occupied on this host by an
+# unrelated service. The frontend reads the port from frontend/.env at build
+# time, so changing it here means rebuilding the frontend too.
+ExecStart=/usr/bin/php artisan reverb:start
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+# --- hardening ---------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged ~@resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+
+# Laravel needs to write its own caches and logs and nothing else.
+ReadWritePaths=/var/www/quakevault-industrial/backend/storage
+ReadWritePaths=/var/www/quakevault-industrial/backend/bootstrap/cache
+
+[Install]
+WantedBy=multi-user.target
