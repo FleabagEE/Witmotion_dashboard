@@ -56,6 +56,17 @@ class ForwarderSettings(BaseModel):
         return os.environ.get(self.token_env, "")
 
 
+class LiveConfig(BaseModel):
+    """Low-latency feed for the dashboard, separate from the durable path."""
+
+    enabled: bool = True
+    redis_url: str = "redis://127.0.0.1:6380/0"
+    channel: str = "quakevault:live"
+    # Bounded on purpose: if the consumer falls behind, drop frames rather than
+    # grow without limit or stall the poll loop.
+    max_queued: int = Field(default=500, ge=10, le=10000)
+
+
 class SensorConfig(BaseModel):
     sensor_id: str = Field(min_length=1, max_length=80)
     model: str = Field(min_length=1)
@@ -132,6 +143,7 @@ class ApplianceConfig(BaseModel):
     spool: SpoolConfig = Field(default_factory=SpoolConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     forwarder: ForwarderSettings = Field(default_factory=ForwarderSettings)
+    live: LiveConfig = Field(default_factory=LiveConfig)
     simulated: bool = False
 
     @model_validator(mode="after")

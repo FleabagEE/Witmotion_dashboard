@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .config import DEFAULT_CONFIG_PATH, ApplianceConfig
 from .engine import AcquisitionEngine
+from .live import RedisLivePublisher, TeeSink
 from .metrics import render_engine_metrics
 from .portlock import PortBusyError
 from .sdnotify import SystemdNotifier
@@ -36,7 +37,20 @@ class AcquisitionService:
             drop_undelivered_when_full=config.spool.drop_undelivered_when_full,
         )
         self.sink = SpoolingSink(self.spool)
-        self.engine = AcquisitionEngine(config.appliance_id, self.sink)
+
+        # The spool always comes first and is allowed to raise. The live feed is
+        # best-effort: a dashboard must never be able to stop a measurement being
+        # recorded.
+        self.live: RedisLivePublisher | None = None
+        engine_sink = self.sink
+        if config.live.enabled:
+            self.live = RedisLivePublisher(
+                config.live.redis_url, config.live.channel, max_queued=config.live.max_queued,
+            )
+            self.live.start()
+            engine_sink = TeeSink(self.sink, self.live)
+
+        self.engine = AcquisitionEngine(config.appliance_id, engine_sink)
         self._started = time.monotonic()
         self._stopping = False
 
@@ -64,6 +78,17 @@ class AcquisitionService:
         renderer = render_engine_metrics(
             self.engine.stats(), self.spool.stats(), uptime_seconds=self.uptime
         )
+        if self.live is not None:
+            stats = self.live.stats()
+            labels = {"appliance": self.config.appliance_id}
+            renderer.add("live_published_total", stats["published"], labels=labels,
+                         metric_type="counter",
+                         help_text="Measurements pushed to the live feed")
+            renderer.add("live_dropped_total", stats["dropped"], labels=labels,
+                         metric_type="counter",
+                         help_text="Live frames dropped because the consumer fell behind")
+            renderer.add("live_failures_total", stats["failures"], labels=labels,
+                         metric_type="counter")
         renderer.write(self.config.metrics.path)
 
     async def _metrics_loop(self, stop: asyncio.Event) -> None:
@@ -146,6 +171,9 @@ class AcquisitionService:
                 self.write_metrics()
             except OSError:
                 pass
+            if self.live is not None:
+                log.info("live feed: %s", self.live.stats())
+                self.live.stop()
             self.spool.close()
             log.info(
                 "acquisition stopped after %.1fs; %d measurements spooled",

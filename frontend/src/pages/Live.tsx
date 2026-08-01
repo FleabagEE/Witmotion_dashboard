@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { WaveformCard, type Trace } from '../components/WaveformCard'
 import { Empty, Pill, relativeAge } from '../components/ui'
+import { subscribeToSensor, type LiveFrame } from '../lib/live'
+import type { SeriesPoint } from '../lib/api'
 
 /** Axis colours are consistent across every card, so X is always X. */
 const AXIS: Trace[] = [
@@ -80,8 +82,55 @@ export function Live() {
     placeholderData: (previous) => previous,
   })
 
-  const series = feed.data?.series
+  const stored = feed.data?.series
   const resolution = feed.data?.resolution
+
+  // Frames arriving over the websocket, appended to whatever the last stored
+  // fetch returned. This is what removes the store-and-forward latency: the
+  // chart shows a reading about as soon as the sensor produced it, while the
+  // authoritative copy still travels the durable path behind it.
+  const [liveFrames, setLiveFrames] = useState<LiveFrame[]>([])
+  const [connected, setConnected] = useState(false)
+  const windowMs = active.seconds * 1000
+  const windowRef = useRef(windowMs)
+  windowRef.current = windowMs
+
+  useEffect(() => {
+    if (!selected) return
+    setLiveFrames([])
+    const unsubscribe = subscribeToSensor(selected, (frame) => {
+      setConnected(true)
+      setLiveFrames((previous) => {
+        const cutoff = Date.now() - windowRef.current
+        const next = [...previous, frame].filter((f) => f.t >= cutoff)
+        // Bounded: a long window at a high poll rate would otherwise grow the
+        // buffer until the tab slows down.
+        return next.length > 4000 ? next.slice(next.length - 4000) : next
+      })
+    })
+    return unsubscribe
+  }, [selected])
+
+  // Live frames are only ever appended after the newest stored point, so a
+  // websocket frame can never overwrite or reorder recorded history.
+  const series = useMemo(() => {
+    if (!stored) return undefined
+    if (liveFrames.length === 0) return stored
+
+    const merged: Record<string, SeriesPoint[]> = {}
+    for (const [key, points] of Object.entries(stored)) {
+      const lastStored = points.length ? points[points.length - 1].t : 0
+      const extra: SeriesPoint[] = []
+      for (const frame of liveFrames) {
+        const value = frame.values[key]
+        if (value !== undefined && frame.t > lastStored) {
+          extra.push({ t: frame.t, v: value, lo: value, hi: value })
+        }
+      }
+      merged[key] = extra.length ? [...points, ...extra] : points
+    }
+    return merged
+  }, [stored, liveFrames])
 
   if (sensors.isLoading) return <Empty>Loading…</Empty>
   if (!selected) return <Empty>No sensors registered yet.</Empty>
@@ -99,6 +148,9 @@ export function Live() {
               />
               {sensor.online ? 'live' : `silent ${relativeAge(sensor.silent_for_seconds)}`}
               <Pill tone={sensor.trustworthy ? 'ok' : 'warn'}>{sensor.verification_status}</Pill>
+              <Pill tone={connected ? 'ok' : 'muted'}>
+                {connected ? 'websocket' : 'polling'}
+              </Pill>
             </span>
           )}
         </div>

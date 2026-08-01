@@ -408,3 +408,70 @@ Details that matter:
 - **Publishing never breaks monitoring.** Every failure is logged and swallowed:
   an unreachable broker is an integration outage, and the database still holds
   the truth.
+
+## ADR-020: A lossy live feed alongside the durable path, not instead of it
+
+**Status.** Accepted.
+
+**Context.** Shaking the sensor moved the traces about a second later. That
+second is not waste, it is the durable path doing its job: decode, write to the
+spool, forward in order, insert, and only then let the browser poll for it. The
+guarantee is that nothing is lost when the database or the network are down, and
+it is the right guarantee for a record. It is the wrong one for somebody standing
+at a wall display tapping a structure and watching for a response.
+
+Making the durable path faster was the tempting fix and the wrong one. Every
+second shaved off it trades away some of the delivery guarantee.
+
+**Decision.** Measurements take two paths. The durable one is unchanged. A second,
+explicitly lossy path publishes each reading to Redis the moment it is decoded;
+a bridge relays it onto websockets and the browser merges those frames onto the
+end of the stored series.
+
+The live path may drop frames whenever it is convenient to do so. It is a view,
+not a record. Anything acted upon - an alarm, a report, a threshold - is read
+from the stored series, which is why `LiveMeasurement` carries no alarm state at
+all: there is then nothing on that channel that could be mistaken for
+authoritative.
+
+**Result.** Median lag from the moment the sensor is read to the frame arriving in
+the browser is 8 ms (n=171, p95 12 ms, max 22 ms), against 0.43-1.64 s measured
+on the polling path.
+
+**Cost and how it is bounded.**
+
+- **Publishing happens off the acquisition thread.** A blocking network call in
+  the poll loop would turn a Redis hiccup into missed polls, and the poll loop is
+  the one thing here that must not be delayed.
+- **The queue is bounded and drops the newest frame.** When the consumer falls
+  behind, the publisher never blocks and never grows without bound. Dropped
+  frames are counted and exported.
+- **The tee sends to the spool first and lets it raise.** Live sinks run after
+  and their failures are swallowed. A dashboard must never be able to stop a
+  measurement being recorded; `test_durable_sink_still_receives_when_the_live_sink_fails`
+  is the pin.
+- **The bridge caps each sensor and group at 15 Hz.** A browser cannot render
+  faster, and pushing every frame would spend the client's main thread on work
+  nobody can see.
+- **The frontend merges only frames newer than the newest stored point**, so a
+  live frame and its durable copy cannot both be plotted.
+
+**One deliberate loosening of the sandbox.** `quakevault-acq.service` ran with
+`RestrictAddressFamilies=AF_UNIX`, which the live feed hit immediately -
+`Address family not supported by protocol`. Notably it failed exactly as designed:
+the durable path was untouched, the log said `live view degraded only`, and
+nothing was lost. `AF_INET` is now allowed. It is one socket family; the unit
+still holds no capabilities and runs under a restricted syscall filter, and
+`systemd-analyze security` still rates it 1.6 OK. With the live feed disabled,
+`AF_UNIX` alone remains sufficient.
+
+**Two configuration traps, both now pinned by tests.** A blocking `SUBSCRIBE`
+sits idle between readings, which the default read timeout treats as a dead
+connection; and phpredis applies the key prefix to channel names, so the default
+prefix would have subscribed to a channel nobody publishes to. The first crashed
+loudly. The second would have looked healthy and delivered nothing, which is
+worse, and is why `LiveBridgeTest` asserts both.
+
+**Not addressed.** Reverb runs on port 9080 rather than its default 8080, which
+is occupied on this host by an unrelated service. The frontend reads it from
+`frontend/.env` at build time, so changing it requires a rebuild.

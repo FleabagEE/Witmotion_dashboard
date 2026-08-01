@@ -52,7 +52,11 @@ ProtectHostname=true
 RestrictSUIDSGID=true
 RestrictRealtime=true
 RestrictNamespaces=true
-RestrictAddressFamilies=AF_UNIX
+# AF_INET is required only by the live feed, which publishes each reading to a
+# local Redis for the dashboard websocket. Acquisition holds no capabilities and
+# runs under a restricted syscall filter, so this widens one socket family and
+# nothing else. With the live feed disabled, AF_UNIX alone is sufficient.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
