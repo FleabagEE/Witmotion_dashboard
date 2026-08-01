@@ -79,6 +79,14 @@ engine changes.
   aggregate? The standards are defined on peak particle velocity, and the manual
   does not say. Affects whether any comparison to a guideline value is valid.
 
+## Live latency budget
+
+End-to-end sensor-to-database lag measured 0.4-1.6 s after retuning on
+2026-07-31. The forwarder interval dominates everything else: at 5 s the whole
+pipeline lagged by 5 s no matter how fast the sensor was polled. Now 1 s.
+Acquisition at 8 Hz acceleration / 4 Hz velocity and summary puts bus
+utilisation at 0.57, leaving headroom for retries.
+
 ## Measured bus capacity
 
 CH340, 5 ms turnaround, 20% safety margin:

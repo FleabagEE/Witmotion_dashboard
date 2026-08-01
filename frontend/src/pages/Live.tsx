@@ -21,18 +21,19 @@ function axisTraces(prefix: string): Trace[] {
  * Grouped by physical quantity rather than by register block: an operator thinks
  * "how fast is it moving", not "what is in holding register 0x3A".
  */
-const CARDS = [
+interface CardSpec {
+  title: string
+  unit: string
+  traces: Trace[]
+  decimals: number
+  note?: string
+}
+
+const CARDS: CardSpec[] = [
   { title: 'Acceleration', unit: 'g', traces: axisTraces('accel'), decimals: 3 },
   { title: 'Vibration velocity', unit: 'mm/s', traces: axisTraces('vib_velocity'), decimals: 2 },
   { title: 'Vibration displacement', unit: 'µm', traces: axisTraces('vib_displacement'), decimals: 0 },
   { title: 'Dominant frequency', unit: 'Hz', traces: axisTraces('vib_frequency'), decimals: 1 },
-  {
-    title: 'RMS acceleration',
-    unit: 'g',
-    traces: AXIS.map((a) => ({ ...a, key: `rms_accel_${a.key}` })),
-    decimals: 3,
-    note: 'computed on-device',
-  },
   {
     title: 'Chip temperature',
     unit: '°C',
@@ -41,12 +42,18 @@ const CARDS = [
   },
 ]
 
+/**
+ * Points are chosen so the bucket width is close to the sensor's own poll
+ * interval: bucketing coarser than the data throws away detail, finer just
+ * interpolates nothing.
+ */
 const WINDOWS = [
-  { label: '5 min', seconds: 300, refetch: 2000 },
-  { label: '15 min', seconds: 900, refetch: 3000 },
-  { label: '1 hour', seconds: 3600, refetch: 5000 },
-  { label: '6 hours', seconds: 21600, refetch: 15000 },
-  { label: '24 hours', seconds: 86400, refetch: 30000 },
+  { label: '1 min', seconds: 60, points: 500, refetch: 1000 },
+  { label: '5 min', seconds: 300, points: 600, refetch: 1000 },
+  { label: '15 min', seconds: 900, points: 600, refetch: 2000 },
+  { label: '1 hour', seconds: 3600, points: 600, refetch: 5000 },
+  { label: '6 hours', seconds: 21600, points: 600, refetch: 15000 },
+  { label: '24 hours', seconds: 86400, points: 600, refetch: 30000 },
 ]
 
 const ALL_CHANNELS = CARDS.flatMap((c) => c.traces.map((t) => t.key))
@@ -60,23 +67,21 @@ export function Live() {
   const selected = sensorId ?? sensors.data?.data[0]?.sensor_id ?? null
   const sensor = sensors.data?.data.find((s) => s.sensor_id === selected)
 
-  // Split into two requests: twelve channels is the endpoint's ceiling, and one
-  // round trip per card would let the traces drift apart in time.
-  const first = useQuery({
-    queryKey: ['multi', selected, active.seconds, 'a'],
-    queryFn: () => api.multiSeries(selected!, ALL_CHANNELS.slice(0, 9), active.seconds),
+  // Every card in one request. Splitting it would let each half land at a
+  // slightly different moment, which on a chart reads as a skew between cards
+  // that is not in the data.
+  const feed = useQuery({
+    queryKey: ['multi', selected, active.seconds],
+    queryFn: () => api.multiSeries(selected!, ALL_CHANNELS, active.seconds, active.points),
     enabled: Boolean(selected),
     refetchInterval: active.refetch,
-  })
-  const second = useQuery({
-    queryKey: ['multi', selected, active.seconds, 'b'],
-    queryFn: () => api.multiSeries(selected!, ALL_CHANNELS.slice(9), active.seconds),
-    enabled: Boolean(selected),
-    refetchInterval: active.refetch,
+    // Keep the previous window on screen while the next one loads, so the
+    // charts do not blank on every refresh.
+    placeholderData: (previous) => previous,
   })
 
-  const series = { ...(first.data?.series ?? {}), ...(second.data?.series ?? {}) }
-  const resolution = first.data?.resolution
+  const series = feed.data?.series
+  const resolution = feed.data?.resolution
 
   if (sensors.isLoading) return <Empty>Loading…</Empty>
   if (!selected) return <Empty>No sensors registered yet.</Empty>

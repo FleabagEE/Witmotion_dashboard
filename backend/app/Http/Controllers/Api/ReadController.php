@@ -240,8 +240,11 @@ class ReadController extends Controller
         ]);
 
         $channels = array_values(array_filter(array_map('trim', explode(',', $data['channels']))));
-        if (count($channels) > 12) {
-            return response()->json(['message' => 'at most 12 channels per request'], 422);
+        // Raised to 16 so a whole dashboard fits in one request: splitting it
+        // let each half land at a different moment, which on a chart reads as a
+        // skew between cards that is not in the data.
+        if (count($channels) > 16) {
+            return response()->json(['message' => 'at most 16 channels per request'], 422);
         }
 
         $seconds = $data['seconds'] ?? 300;

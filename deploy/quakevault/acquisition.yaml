@@ -30,7 +30,10 @@ forwarder:
   # never in this file, which is world-readable and version-controlled.
   token_env: QV_INGEST_TOKEN
   batch_size: 200
-  interval_seconds: 5
+  # One second, not five. The forwarder interval is the dominant term in
+  # end-to-end latency: everything upstream is sub-second, so a five-second
+  # drain made a live waveform lag by five seconds for no other reason.
+  interval_seconds: 1
   announce_profiles: true
 
 buses:
@@ -56,13 +59,19 @@ buses:
           - condition_y
           - condition_z
           - fault_diagnosis
-        # Rates must fit the bus. At 9600 baud one WTVB01 sustains roughly
-        # 13 Hz total across all groups; see docs/known-limitations.md.
+        # Rates must fit the bus. Measured utilisation at the previous rates was
+        # 0.35, so roughly two thirds of the bus was idle; these rates target
+        # about 0.70 and leave headroom for retries. See
+        # docs/known-limitations.md for the capacity model.
+        #
+        # The fast-moving quantities get the bandwidth. Condition indicators and
+        # fault words change slowly and are computed on-device anyway, so polling
+        # them harder buys nothing but bus time.
         poll_hz:
-          acceleration: 4
-          vibration_velocity: 2
-          vibration_summary: 2
-          condition_x: 0.5
-          condition_y: 0.5
-          condition_z: 0.5
-          fault_diagnosis: 0.2
+          acceleration: 8
+          vibration_velocity: 4
+          vibration_summary: 4
+          condition_x: 0.33
+          condition_y: 0.33
+          condition_z: 0.33
+          fault_diagnosis: 0.1
