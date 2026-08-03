@@ -22,7 +22,13 @@
 set -uo pipefail
 
 REPO="/var/www/quakevault-industrial"
-STATE="/var/lib/quakevault-acq/upgrade-state"
+# Deployment state, not acquisition data - and deliberately not under
+# /var/lib/quakevault-acq, which systemd creates 0700 for the service user. The
+# script wrote there with sudo and then tested for the file without it, so it
+# created a rollback point it could never find: the upgrade reported success and
+# left no way back. Kept beside the backups, which are the other deployment
+# artefact, and every access goes through sudo so the asymmetry cannot return.
+STATE="/var/backups/quakevault/upgrade-state"
 DRY_RUN="${DRY_RUN:-0}"
 
 log()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -83,7 +89,7 @@ health() {
 do_rollback() {
     log "Rollback"
 
-    [[ -f "$STATE" ]] || { bad "no upgrade state at $STATE - nothing to roll back to"; exit 1; }
+    sudo test -f "$STATE" || { bad "no upgrade state at $STATE - nothing to roll back to"; exit 1; }
 
     local prev_sha prev_migrations
     prev_sha=$(sudo grep '^sha=' "$STATE" | cut -d= -f2)
@@ -210,7 +216,7 @@ do_status() {
     info "running:  $(current_sha)"
     info "branch:   $(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null)"
     info "migrations applied: $(migration_count)"
-    if [[ -f "$STATE" ]]; then
+    if sudo test -f "$STATE"; then
         info "last upgrade came from: $(sudo grep '^sha=' "$STATE" | cut -d= -f2)"
         info "at: $(sudo grep '^at=' "$STATE" | cut -d= -f2-)"
         info "rollback available"

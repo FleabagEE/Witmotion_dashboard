@@ -40,6 +40,7 @@ tests/test_core.py
 tests/test_derive.py
 tests/test_discovery.py
 tests/test_engine.py
+tests/test_entry_points.py
 tests/test_forwarder.py
 tests/test_live.py
 tests/test_probe.py
