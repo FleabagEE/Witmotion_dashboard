@@ -1,5 +1,7 @@
 # TASKS
 
+*Last reconciled against the running system: 2026-08-03.*
+
 Status: `todo` | `in progress` | `blocked` | `done`
 
 ## Phase 1 — Repository assessment
@@ -82,19 +84,34 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Design system | done | UI/UX | — | Severity never colour-alone; tabular figures | `components/ui.tsx` |
 | Overview | done | Frontend | API | Verified live in browser | `pages/Overview.tsx` |
 | Live Monitor | done | Frontend | API | Six waveform cards, verified in browser | `pages/Live.tsx` |
-| Signal Analysis (gated) | todo | Signal | throughput model | Refuses out-of-band requests | — |
+| Signal Analysis (gated) | **done** | Signal | throughput model | Refuses out-of-band requests, transients and drift | `pages/Signal.tsx`, `SpectrumAnalyzer.php` |
 | Alarm Center | done | Frontend | alarms | Acknowledge gated by ability | `pages/Alarms.tsx` |
-| Kiosk mode | todo | Frontend | auth roles | Survives reboot | — |
+| Kiosk mode | **done** | Frontend | auth roles | Role-gated, staleness stated, systemd unit | `pages/Kiosk.tsx`, `quakevault-kiosk.service` |
+| Frontend test suite | **done** | Frontend | — | 33 vitest tests on the behaviours that had bugs | `npm test` |
 
 ## Phase 6 — Hardening and validation
 
 | Task | Status | Owner role | Depends on | Validation | Result |
 |---|---|---|---|---|---|
-| Fault injection | todo | QA | Phase 3–5 | 20-case HIL matrix | — |
-| 24-hour soak | todo | QA | engine | No unbounded growth | — |
-| Backup / restore | todo | DevSecOps | DB | Restore drill | — |
-| Upgrade / rollback | todo | DevSecOps | deploy | Rollback drill | — |
-| Acceptance report | todo | QA | all | Criteria signed off | — |
+| Fault injection | **done** | QA | Phase 3–5 | 14/20 pass, 1 partial, 4 need hardware | `acceptance/fault-injection.sh` |
+| 24-hour soak | **running** | QA | engine | No unbounded growth | started 2026-08-03 12:01 |
+| Backup / restore | **done** | DevSecOps | DB | Restore verified into a scratch DB | `acceptance/backup-restore.sh` |
+| Upgrade / rollback | **done** | DevSecOps | deploy | Real migration applied then reverted | `deploy/upgrade.sh` |
+| Acceptance report | **done** | QA | all | 20-case matrix recorded with evidence | `docs/acceptance-results.md` |
+| Documentation set | **done** | Tech writer | all | Operator, admin, troubleshooting, API, MQTT, testing | `docs/`, `README.md` |
+
+## Blocked — hardware not available
+
+| Case | Needs |
+|---|---|
+| HIL 2 — one HWT901B-485 | An HWT901B-485. Ordered, never arrived |
+| HIL 3 — both types, separate adapters | As above |
+| HIL 4 — both types, one multi-drop bus | As above |
+| HIL 5 — multiple sensors on one bus | A second *working* WTVB01-485. The spare is faulty |
+
+The multi-sensor code paths are exercised by the simulator, which runs several
+slave IDs on one bus. That is not the same as proving it against real hardware
+and is deliberately not recorded as if it were.
 
 ## Blocked — operator action required
 
@@ -103,4 +120,12 @@ Status: `todo` | `in progress` | `blocked` | `done`
 2. Supply DIN 4150-3 and/or BS 7385-2 standard text so the guideline tables can
    be promoted from candidate to verified.
 3. Confirm structure class, measurement position, and whether the concern is
-   transient (blasting, piling) or long-term (traffic, settlement).
+   transient (blasting, piling) or long-term (traffic, settlement). Without
+   these no structural alarm definition exists at all - only the liveness alarm.
+4. Optional: run the six-position accelerometer calibration. Implemented and
+   tested; not applied. Worth ~2 degrees of inclination accuracy.
+
+## Not covered by tests
+
+- The Signal page, routing and the login flow are hand-verified only.
+- Nothing visual: no screenshot or layout testing.
