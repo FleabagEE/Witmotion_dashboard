@@ -77,10 +77,24 @@ class CheckUnitConsistency extends Command
         }
 
         sort($ratios);
-        $median = $ratios[intdiv(count($ratios), 2)];
+        $count = count($ratios);
+        $median = $ratios[intdiv($count, 2)];
+        $low = $ratios[intdiv($count, 4)];
+        $high = $ratios[intdiv(3 * $count, 4)];
 
         $this->line(sprintf('%d simultaneous samples with excitation', count($rows)));
-        $this->line(sprintf('median implied/measured frequency ratio: %.2f', $median));
+        $this->line(sprintf(
+            'implied/measured frequency ratio: median %.2f, middle half %.2f to %.2f',
+            $median, $low, $high,
+        ));
+        // The scatter is genuinely wide and saying so matters. A tap is a
+        // transient, not a sinusoid, and the device computes its three outputs
+        // over its own windows - so v = 2*pi*f*A holds only approximately on
+        // real data. What the check relies on is not precision but distance: a
+        // range-mode error moves the ratio by a factor of a hundred, which no
+        // amount of this scatter can imitate.
+        $this->line('(wide scatter is normal - a tap is not a sinusoid; the fault this');
+        $this->line(' detects is a factor of 100, far outside that spread)');
         $this->newLine();
 
         if ($median >= 1 / self::TOLERANCE && $median <= self::TOLERANCE) {

@@ -274,6 +274,15 @@ Run it after any change to the sensor's configuration, and after a sensor is
 replaced. It needs some excitation in the window - tap the sensor first - and
 says so rather than inventing a verdict when the structure is still.
 
+**The mode may not survive a power cycle.** Changed to 600 um / 0.01 um in the
+vendor software on 2026-08-03, then unplugged to move the sensor between
+machines: the check afterwards read a ratio of 1.02, meaning the device had
+reverted to 60000 um. The manual documents a separate SAVE register at 0x00
+(section 6.4.1), and a parameter written without it applies to the running
+device only. Anything set in the vendor tool must be saved, and confirmed with
+this check after the sensor is next re-seated - the setting is not readable back
+over Modbus, so there is no other way to know.
+
 **Which mode to choose.** The fine mode resolves 0.01 um, a hundred times better,
 and structural vibration displacement is usually microns to tens of microns.
 But a hand tap on this bench produced excursions well past 600 um, which would
