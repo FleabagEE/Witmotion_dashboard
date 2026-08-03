@@ -20,3 +20,12 @@ Schedule::command('alarms:escalate')->everyFiveMinutes()->withoutOverlapping();
 // Retained health and status, so an integration connecting at any moment learns
 // the current state immediately instead of waiting for the next event.
 Schedule::command('mqtt:health')->everyMinute()->withoutOverlapping();
+
+// Replay protection expires within hours - the spool holds 10.1 hours of
+// envelopes and a forwarder cannot re-offer what it no longer has - but nothing
+// pruned the table. It reached 3.9 million rows and 1857 MB in three days,
+// growing 1.3 million a day, for a guard whose usefulness is measured in hours.
+// Daily, off-peak, and skipped if the previous run is still going.
+Schedule::command('ingest:prune-idempotency --days=7')
+    ->dailyAt('03:20')
+    ->withoutOverlapping();

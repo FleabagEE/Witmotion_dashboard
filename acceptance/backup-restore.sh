@@ -18,8 +18,15 @@
 # register profiles, its alarm state and recent evidence - not a year of raw
 # samples, which belong to whatever archival mechanism the site already has.
 #
-# BACKUP_DAYS controls the window (default 2). BACKUP_DAYS=0 dumps everything
-# and is documented as slow rather than hidden.
+# BACKUP_DAYS controls how much raw measurement data to include. Default 0 -
+# none. That is deliberate: measurements are evidence with their own retention,
+# not the thing that rebuilds an appliance, and including them made the default
+# backup slow enough that nobody would run it. A backup nobody runs is the most
+# common way backups fail.
+#
+#   BACKUP_DAYS=0    configuration, schema, state, profiles, spool  (seconds)
+#   BACKUP_DAYS=1    the above plus the last day of measurements    (~1 min)
+#   BACKUP_DAYS=all  everything                                     (very slow)
 #
 # The verify step never touches the live database. It restores into a scratch
 # one and drops it afterwards.
@@ -44,7 +51,7 @@ do_backup() {
     log "Backup"
     sudo mkdir -p "$DEST"
     local stamp archive days
-    days="${BACKUP_DAYS:-2}"
+    days="${BACKUP_DAYS:-0}"
     stamp=$(date -u +%Y%m%dT%H%M%SZ)
     archive="$DEST/quakevault-$stamp"
 
@@ -63,7 +70,9 @@ do_backup() {
         | sudo tee "$archive.dump" >/dev/null || die "state dump failed"
 
     if [[ "$days" == "0" ]]; then
-        info "dumping ALL measurements (slow - 4.4 GB/day on this appliance)"
+        info "skipping raw measurements (set BACKUP_DAYS to include them)"
+    elif [[ "$days" == "all" ]]; then
+        info "dumping ALL measurements (very slow - 4.4 GB/day on this appliance)"
         docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" \
             -c "\\copy (select * from measurements) to stdout with csv header" \
             | gzip | sudo tee "$archive.measurements.csv.gz" >/dev/null
@@ -82,12 +91,25 @@ do_backup() {
         -C "$REPO" profiles \
         2>/dev/null || die "config capture failed"
 
-    # The spool, because it holds anything not yet forwarded. Copied through
-    # SQLite's own backup so a live writer cannot tear it.
+    # Only the UNDELIVERED spool rows, not the file.
+    #
+    # spool.db is 1.2 GB: a 500 000-row cap of JSON envelopes at about 2.4 KB
+    # each. Not bloat - the freelist is two pages - just a lot of real data.
+    # Copying it took over eight minutes, which is what made the whole backup
+    # unrunnable, and it is wasted effort besides: almost all
+    # of that is rows already forwarded to the database and therefore already in
+    # the dump. What is worth preserving is the handful not yet delivered, and
+    # that is usually a few rows.
     if sudo test -f /var/lib/quakevault-acq/spool.db; then
-        info "copying spool"
-        sudo sqlite3 /var/lib/quakevault-acq/spool.db ".backup '$archive.spool.db'" \
-            || info "spool copy failed (continuing - it is not the system of record)"
+        local pending
+        pending=$(sudo sqlite3 /var/lib/quakevault-acq/spool.db \
+            "select count(*) from spool where delivered_at is null" 2>/dev/null)
+        info "exporting ${pending:-0} undelivered spool row(s)"
+        sudo sqlite3 /var/lib/quakevault-acq/spool.db \
+            ".mode insert spool" \
+            "select * from spool where delivered_at is null" 2>/dev/null \
+            | gzip | sudo tee "$archive.spool-pending.sql.gz" >/dev/null \
+            || info "spool export failed (continuing - it is not the system of record)"
     fi
 
     # Checksums last, over everything else. Without them a truncated dump is
@@ -96,6 +118,8 @@ do_backup() {
 
     local rows
     if [[ "$days" == "0" ]]; then
+        rows=0
+    elif [[ "$days" == "all" ]]; then
         rows=$(psql_main "select count(*) from measurements" | tr -d '[:space:]')
     else
         rows=$(psql_main "select count(*) from measurements where time > now() - interval '$days days'" | tr -d '[:space:]')
