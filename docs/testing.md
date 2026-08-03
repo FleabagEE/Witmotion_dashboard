@@ -12,6 +12,11 @@ cd frontend && npm test                                           # 33
 
 ## What each covers
 
+**Contract (PHPUnit, `ContractTest`)** — the API against `backend/openapi.yaml`.
+Route coverage in both directions plus live response validation. A hand-maintained
+spec drifts the first time somebody is in a hurry, and then it is worse than none:
+a promise the application no longer keeps.
+
 **Backend (PHPUnit)** — ingestion idempotency, alarm hysteresis and escalation,
 notification gating, role boundaries, spectral gating, unit consistency, report
 determinism.

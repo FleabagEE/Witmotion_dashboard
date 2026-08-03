@@ -29,7 +29,7 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Profile-driven reader + quality flags | done | Backend | decoder | End-to-end vs simulator | `client.py` |
 
 | MQTT publication | done | Architect | ingestion | 10 tests + live broker round-trip | `MqttPublisher` |
-| Ingestion API contract | todo | Backend | measurement schema | OpenAPI + contract tests | — |
+| Ingestion API contract | **done** | Backend | measurement schema | OpenAPI 3.1 verified against the app both ways | `backend/openapi.yaml`, `ContractTest` |
 | Database design (hypertables) | done | Backend | measurement schema | 7 migrations applied, policies verified | TimescaleDB 2.29/pg18 |
 
 ## Phase 3 — Hardware foundation

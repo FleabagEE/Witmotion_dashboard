@@ -1,0 +1,622 @@
+openapi: 3.1.0
+
+info:
+  title: QuakeVault Industrial API
+  version: "1.1.0"
+  description: |
+    Structural vibration monitoring appliance.
+
+    This document is verified mechanically, not maintained by hand. `ContractTest`
+    checks it against the running application in both directions: a route in the
+    application but missing here is undocumented, and a route here but missing
+    from the application is a stale promise. Both fail the build.
+
+    Response schemas are validated against live responses, so a field that
+    changes shape without this file changing will fail too.
+
+    **Fields that carry judgement, not just data.** Several responses include
+    fields whose purpose is to stop a number being trusted more than it should
+    be. They are marked in the schemas below and none of them are optional:
+
+      - `verification_status` / `trustworthy` — whether the sensor's register map
+        was ever confirmed against hardware
+      - `quality` — `good`, `implausible` or `bad`
+      - `source_type` — `native`, `derived`, `processed` or `simulated`
+      - `provisional` / `actionable` — whether an alarm's threshold has been
+        confirmed against the published standard by a named person
+      - `allowed` / `transient` — whether a spectrum is defensible at all
+
+servers:
+  - url: http://127.0.0.1:8000
+    description: Appliance, local
+
+tags:
+  - name: auth
+  - name: read
+  - name: alarms
+  - name: ingest
+    description: Appliance-only. Requires the `ingest` ability and nothing else.
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /api/v1/login:
+    post:
+      tags: [auth]
+      summary: Exchange credentials for a token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                device_name: { type: string }
+      responses:
+        "200":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, user]
+                properties:
+                  token: { type: string }
+                  user: { $ref: "#/components/schemas/User" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current token
+      responses:
+        "200": { description: Revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/me:
+    get:
+      tags: [auth]
+      summary: The current user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/overview:
+    get:
+      tags: [read]
+      summary: Appliance summary
+      description: Requires the `read` ability.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, sensors]
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  sensors:
+                    type: object
+                    required: [total, online, silent]
+                    properties:
+                      total: { type: integer }
+                      online: { type: integer }
+                      silent: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/sensors:
+    get:
+      tags: [read]
+      summary: Every sensor, with how far it can be trusted
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sensor" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/sensors/{sensorId}/channels:
+    get:
+      tags: [read]
+      summary: Channel metadata for a sensor
+      parameters:
+        - { name: sensorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { type: object } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/sensors/{sensorId}/latest:
+    get:
+      tags: [read]
+      summary: The newest reading on every channel
+      parameters:
+        - { name: sensorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Reading" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/series:
+    get:
+      tags: [read]
+      summary: One channel over time
+      parameters:
+        - { name: sensor_id, in: query, required: true, schema: { type: string } }
+        - { name: channel_key, in: query, required: true, schema: { type: string } }
+        - { name: seconds, in: query, schema: { type: integer, default: 300 } }
+        - { name: max_points, in: query, schema: { type: integer, default: 300 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MultiSeries" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/series/multi:
+    get:
+      tags: [read]
+      summary: Several channels in one request
+      description: |
+        One request rather than several on purpose. Splitting them would let each
+        half land at a slightly different moment, which on a chart reads as a
+        skew between cards that is not in the structure.
+
+        At most 20 channels.
+      parameters:
+        - { name: sensor_id, in: query, required: true, schema: { type: string } }
+        - name: channels
+          in: query
+          required: true
+          description: Comma-separated, maximum 20
+          schema: { type: string }
+        - { name: seconds, in: query, schema: { type: integer, default: 300 } }
+        - { name: max_points, in: query, schema: { type: integer, default: 300 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MultiSeries" }
+        "422":
+          description: More than 20 channels, or a missing parameter
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/spectrum:
+    get:
+      tags: [read]
+      summary: Frequency content, with a gate in front of it
+      description: |
+        Read `analysis.allowed` before `analysis.spectrum`. When the requested
+        band exceeds 0.4 x the measured sample rate the response carries
+        `spectrum: null` and an explanation instead of a chart.
+
+        Read `spectrum.transient` too. A periodogram assumes a stationary signal;
+        a short burst in a long window produces a confident peak that describes
+        the window length rather than the structure, and no component is reported
+        when that is detected.
+      parameters:
+        - { name: sensor_id, in: query, required: true, schema: { type: string } }
+        - { name: channel_key, in: query, required: true, schema: { type: string } }
+        - { name: seconds, in: query, schema: { type: integer, default: 300 } }
+        - { name: requested_hz, in: query, schema: { type: number } }
+      responses:
+        "200":
+          description: OK. May legitimately carry no spectrum.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SpectrumResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/alarms:
+    get:
+      tags: [alarms]
+      summary: Alarm events
+      parameters:
+        - name: unacknowledged_only
+          in: query
+          schema: { type: string, enum: ["0", "1"] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Alarm" }
+
+  /api/v1/alarms/{alarm}/acknowledge:
+    post:
+      tags: [alarms]
+      summary: Record that a person accepted an alarm
+      description: |
+        Requires the `acknowledge` ability. A kiosk token cannot do this: an
+        acknowledgement is a person taking responsibility, and it must be
+        attributable to that person rather than to a screen anyone can reach.
+      parameters:
+        - { name: alarm, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string }
+      responses:
+        "200": { description: Acknowledged }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/internal/v1/ingest/health:
+    get:
+      tags: [ingest]
+      summary: Ingestion contract check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, schema_version]
+                properties:
+                  status: { type: string }
+                  schema_version: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/internal/v1/ingest/batch:
+    post:
+      tags: [ingest]
+      summary: Submit measurements
+      description: |
+        Idempotent on `appliance_id:run_id:sensor_id:group:sequence`. A forwarder
+        that crashes mid-batch re-offers the same envelopes; the replay is a
+        no-op, not a duplicate.
+
+        `run_id` is in that key because sequence numbers restart at 1 on each
+        service start. Without it a replay after a restart collided with the
+        previous run and 98 measurements were silently discarded.
+
+        Send microseconds in `timestamp_utc`. Whole seconds collapse the readings
+        of one second onto a single timestamp and cap spectral analysis at
+        0.4 Hz.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [measurements]
+              properties:
+                measurements:
+                  type: array
+                  maxItems: 1000
+                  items: { $ref: "#/components/schemas/Envelope" }
+      responses:
+        "202":
+          description: |
+            Accepted. May be partial - check `rejected`. Accepted envelopes are
+            already stored; rejected ones are listed with an index and a reason.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResult" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/internal/v1/ingest/profile:
+    post:
+      tags: [ingest]
+      summary: Announce a sensor profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Recorded }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  responses:
+    Unauthorized:
+      description: No token, or the token is invalid
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The token lacks the ability this route requires
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such sensor, alarm or channel
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: The body names the offending field
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+        errors: { type: object }
+
+    User:
+      type: object
+      required: [name, email, role]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        role:
+          type: string
+          enum: [kiosk, viewer, operator, engineer, auditor, administrator]
+
+    Sensor:
+      type: object
+      required: [sensor_id, verification_status, trustworthy, online]
+      properties:
+        sensor_id: { type: string }
+        model: { type: [string, "null"] }
+        verification_status:
+          type: [string, "null"]
+          description: |
+            Travels with every sensor deliberately. A reading from a sensor whose
+            register map was never confirmed is a picture of an assumption.
+        trustworthy: { type: boolean }
+        online: { type: boolean }
+        silent_for_seconds: { type: [integer, "null"] }
+
+    Reading:
+      type: object
+      required: [channel_key, value, unit, quality, source_type, at]
+      properties:
+        channel_key: { type: string }
+        value:
+          type: [number, "null"]
+          description: |
+            Null means the channel read nothing. It is never filled with 0 or the
+            previous value - plotted as zero it would look like a still structure
+            rather than absent data.
+        unit: { type: string }
+        quality:
+          type: string
+          enum: [good, implausible, bad]
+        source_type:
+          type: string
+          enum: [native, derived, processed, simulated]
+          description: |
+            `derived` covers inclination, computed from the gravity vector
+            because this sensor has no angle register. `processed` means a
+            calibration was applied.
+        at: { type: string }
+
+    SeriesPoint:
+      type: object
+      required: [t, v, lo, hi]
+      properties:
+        t: { type: integer, description: "Epoch milliseconds, bucket start" }
+        v: { type: [number, "null"], description: Mean within the bucket }
+        lo:
+          type: [number, "null"]
+          description: |
+            Minimum within the bucket. Present so downsampling cannot hide a
+            transient - averaging alone would erase exactly the peak a vibration
+            limit is written against.
+        hi: { type: [number, "null"] }
+
+    MultiSeries:
+      type: object
+      required: [resolution, series]
+      properties:
+        resolution:
+          type: string
+          enum: [raw_bucketed, hourly_rollup]
+          description: "`hourly_rollup` has peaks flattened; the dashboard says so."
+        series:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: "#/components/schemas/SeriesPoint" }
+
+    SpectrumResponse:
+      type: object
+      required: [sensor_id, channel_key, window_seconds, analysis]
+      properties:
+        sensor_id: { type: string }
+        channel_key: { type: string }
+        unit: { type: [string, "null"] }
+        window_seconds: { type: [integer, string] }
+        verification_status: { type: [string, "null"] }
+        analysis: { $ref: "#/components/schemas/SpectrumAnalysis" }
+        device_reported:
+          type: [object, "null"]
+          description: |
+            The sensor's own dominant-frequency reading, computed on-device at
+            full rate and valid to 300 Hz. Ours stops at a few Hz. Both travel
+            together because either alone would mislead.
+
+    SpectrumAnalysis:
+      type: object
+      required: [samples, samples_available, decimation, sample_hz, jitter_ms, span_seconds, allowed, explanation, spectrum]
+      properties:
+        samples: { type: integer }
+        samples_available: { type: integer }
+        decimation:
+          type: integer
+          description: "Greater than 1 means the window was thinned. Surfaced, never silent."
+        sample_hz: { type: [number, "null"] }
+        jitter_ms: { type: [number, "null"] }
+        span_seconds: { type: number }
+        defensible_max_hz: { type: number }
+        nyquist_hz: { type: number }
+        requested_hz: { type: number }
+        allowed:
+          type: boolean
+          description: "False means `spectrum` is null and `explanation` says why."
+        explanation: { type: string }
+        spectrum:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/Spectrum"
+
+    Spectrum:
+      type: object
+      required: [frequencies, power, min_hz, peak_hz, peak_power, false_alarm_probability, peak_significant, detrended, transient]
+      properties:
+        frequencies: { type: array, items: { type: number } }
+        power: { type: array, items: { type: number } }
+        min_hz: { type: number }
+        peak_hz: { type: number }
+        peak_power: { type: number }
+        false_alarm_probability: { type: number }
+        peak_significant:
+          type: boolean
+          description: |
+            False means the tallest bar is indistinguishable from noise and must
+            not be read as a finding.
+        detrended: { type: boolean }
+        trend_bins_excluded: { type: integer }
+        lowest_reportable_hz: { type: number }
+        energy_concentration: { type: number }
+        transient:
+          type: boolean
+          description: |
+            True means the window holds an event rather than sustained vibration.
+            No component is reported however bright it looks.
+        transient_note: { type: [string, "null"] }
+
+    Alarm:
+      type: object
+      required: [id, level, state, provisional, actionable]
+      properties:
+        id: { type: integer }
+        name: { type: [string, "null"] }
+        sensor_id: { type: integer }
+        channel_key: { type: string }
+        level: { type: string, enum: [normal, warning, critical] }
+        peak_level: { type: string }
+        state: { type: string }
+        value: { type: [number, "null"] }
+        threshold: { type: [number, "null"] }
+        unit: { type: [string, "null"] }
+        raised_at: { type: [string, "null"] }
+        acknowledged_at: { type: [string, "null"] }
+        provisional:
+          type: boolean
+          description: |
+            The threshold came from a table nobody has confirmed against the
+            published standard. A provisional alarm is displayed and never
+            notifies.
+        actionable: { type: boolean }
+        thresholds_confirmed_by: { type: [string, "null"] }
+
+    Envelope:
+      type: object
+      required: [appliance_id, run_id, sensor_id, group, sequence, timestamp_utc, measurements]
+      properties:
+        schema_version: { type: string }
+        appliance_id: { type: string }
+        run_id: { type: string }
+        sensor_id: { type: string }
+        sensor_model: { type: string }
+        profile_version: { type: string }
+        group: { type: string }
+        sequence: { type: integer }
+        timestamp_utc:
+          type: string
+          description: ISO 8601 with microseconds. Preserved end to end.
+        simulated: { type: boolean }
+        quality: { type: object }
+        measurements:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              value: { type: [number, "null"] }
+              unit: { type: string }
+              quality: { type: string, enum: [good, implausible, bad, stale] }
+              class: { type: string }
+              raw:
+                type: array
+                items: { type: integer }
+                description: |
+                  The register words. Worth sending: keeping them is what allowed
+                  143 rows to be recomputed when a decode was found wrong months
+                  later. Without them the only correct response would have been
+                  to discard the affected history.
+
+    IngestResult:
+      type: object
+      required: [batch_uid, offered, accepted, duplicates, rejected]
+      properties:
+        batch_uid: { type: string }
+        offered: { type: integer }
+        accepted: { type: integer }
+        duplicates:
+          type: integer
+          description: Replay safety, not an error.
+        rejected: { type: integer }
+        alarms_changed: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              error: { type: string }

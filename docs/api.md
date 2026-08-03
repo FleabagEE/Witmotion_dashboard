@@ -1,5 +1,13 @@
 # API reference
 
+**The machine-readable contract is `backend/openapi.yaml`** (OpenAPI 3.1). This
+page is the prose companion; the YAML is what is verified.
+
+`ContractTest` holds the application to it in both directions — a route in the
+app but not the spec is undocumented, a route in the spec but not the app is a
+promise nothing honours — and validates live responses against the schemas, so a
+field that changes shape fails the build rather than an integration.
+
 All endpoints are under `/api`. Authentication is a Sanctum bearer token; every
 route except `POST /api/v1/login` requires one.
 
