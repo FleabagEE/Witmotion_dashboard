@@ -475,3 +475,83 @@ worse, and is why `LiveBridgeTest` asserts both.
 **Not addressed.** Reverb runs on port 9080 rather than its default 8080, which
 is occupied on this host by an unrelated service. The frontend reads it from
 `frontend/.env` at build time, so changing it requires a rebuild.
+
+## ADR-021: Vibration magnitudes are unsigned, and a bench cannot prove a decode
+
+**Status.** Accepted. Profile 1.0.0 -> 1.1.0.
+
+**What happened.** Three seconds of hand-shaking produced velocity readings of
+-295 mm/s and displacements of -12387 um on registers declared non-negative.
+The quality gate flagged them, which is what it is for, but the flag was
+treating good data as bad and hiding a decode fault underneath.
+
+The raw words settled it. Two adjacent samples of a smoothly rising magnitude:
+
+    raw 31932 -> +319.32 mm/s
+    raw 33530 -> -320.06 mm/s
+
+A 640 mm/s reversal between consecutive readings is not physics. Velocity
+(0x3A-0x3C) and displacement (0x41-0x43) are unsigned magnitudes and were being
+decoded as signed, so everything above 32767 counts came back inverted.
+
+**Why the verification gate missed it.** The gate checked 585 samples against the
+manufacturer's table and against physical plausibility, and it was right about
+every one. A stationary sensor never exceeds 32767 counts on these registers, so
+the whole bench campaign exercised only the half of the range where signed and
+unsigned agree. The decode was correct everywhere it was tested and wrong
+exactly in the regime the instrument exists to measure.
+
+The lesson is not "test harder". It is that a register's *type* cannot be
+inferred from data that never reaches the boundary, and the profile schema
+defaults to int16 - so every magnitude register silently inherited the wrong
+type unless explicitly told otherwise. Three did.
+
+**Also wrong: the plausibility bound.** Velocity was capped at 120 mm/s, under
+what the hardware emits. 113 genuine readings between 120 and 320 mm/s were
+marked implausible, and because the spectrum endpoint reads only `good` rows,
+the loudest part of a real event was the part being discarded. The maximum is
+now the full representable range. A bound that rejects real large events is
+worse than a loose one; the bound exists to catch a wrong register map, not to
+enforce a spec sheet.
+
+**The history was recoverable.** 143 inverted readings were recomputed from the
+raw register words stored beside every measurement, and 113 were re-flagged. That
+is what storing raw registers buys: a decode can be found wrong months later, and
+without them the only correct response would have been to discard the affected
+record. The rows still carry `profile_version: 1.0.0`, which is accurate - that
+is the version they were captured under, and an audit should be able to see it.
+
+**Still open.** The 36 condition indicators (0x47-0x6A) are decoded as signed and
+have not been re-examined. Some must be signed - skewness is negative for a
+left-tailed distribution - and others cannot be, such as RMS and absolute
+average. They sit near zero on this bench and carry exactly the latent risk
+velocity did.
+
+## ADR-022: A transient is an event, not a spectrum
+
+**Status.** Accepted.
+
+**Context.** With the shake data recovered, the periodogram reported a peak at
+0.026 Hz over a 15-minute window with a false-alarm probability of zero -
+statistically overwhelming, and meaningless. A periodogram assumes the signal is
+stationary. A three-second tap inside a fifteen-minute record is not, and an
+isolated burst correlates best with a wave slow enough that the window holds one
+half-cycle of it. The "finding" described the window length.
+
+This is the same class of error as the drift peak in ADR-020's page: a method
+applied outside its assumptions returns a confident number rather than an error.
+
+**Decision.** The window is split into ten blocks and the share of energy in the
+busiest one is measured. Stationary content sits near 0.1; half or more in a
+single block means the record holds an event rather than sustained vibration.
+When that fires, the spectrum is still drawn - the energy is real and worth
+seeing - but no component is reported and the UI says why, in the terms an
+operator can act on: narrow the window to the event.
+
+Measured on the real shake: 98% concentration over 15 minutes, 54% over one
+minute. Both correctly refused.
+
+**Cost.** A genuinely impulsive structure excited repeatedly could be called
+transient when a spectrum would have been informative. Refusing to answer is the
+right failure here: the alternative is a number that looks like a resonance and
+is an artefact of the window.

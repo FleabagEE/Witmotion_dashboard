@@ -228,3 +228,64 @@ class TestConditionIndicators:
         """
         indicators = [c for c in profile.channels if c.quantity == "condition_indicator"]
         assert len(indicators) == 36
+
+
+# --- unsigned magnitude registers -------------------------------------------
+#
+# Added after a hard shake on 2026-08-03 revealed velocity and displacement were
+# decoded as signed. Every one of these registers is a magnitude that only
+# exceeds 32767 counts during a real event, so a stationary bench test cannot
+# reach the bug. These fix the boundary explicitly.
+
+def channel(key: str):
+    for group in loader.get("WTVB01-485").register_groups:
+        for ch in group.channels:
+            if ch.key == key:
+                return ch
+    raise AssertionError(f"no channel {key}")
+
+
+@pytest.mark.parametrize("key", [
+    "vib_velocity_x", "vib_velocity_y", "vib_velocity_z",
+    "vib_displacement_x", "vib_displacement_y", "vib_displacement_z",
+    "vib_frequency_x", "vib_frequency_y", "vib_frequency_z",
+])
+def test_magnitude_registers_are_unsigned(key: str) -> None:
+    # A magnitude cannot be negative. Signed decoding inverts everything above
+    # 32767 counts, which is the large-event regime and nothing else.
+    assert channel(key).data_type == "uint16"
+
+
+@pytest.mark.parametrize("key", ["accel_x", "accel_y", "accel_z", "temperature"])
+def test_genuinely_signed_registers_stay_signed(key: str) -> None:
+    # The inverse mistake would be just as bad: acceleration resolves gravity
+    # onto axes that point downwards, and temperature goes below zero.
+    assert channel(key).data_type == "int16"
+
+
+def test_the_exact_reading_that_exposed_the_bug() -> None:
+    # Two consecutive samples from the shake. Under the old signed decoding
+    # these read +319.32 and -320.06 mm/s: a 640 mm/s reversal between adjacent
+    # readings of a smoothly rising magnitude.
+    ch = channel("vib_velocity_y")
+    before = decode([31932], ch.data_type, scale=ch.scale)
+    after = decode([33530], ch.data_type, scale=ch.scale)
+
+    assert before == pytest.approx(319.32)
+    assert after == pytest.approx(335.30)
+    # The whole point: the magnitude keeps rising across the boundary.
+    assert after > before
+
+
+def test_velocity_spans_the_full_unsigned_range() -> None:
+    ch = channel("vib_velocity_x")
+    assert decode([65535], ch.data_type, scale=ch.scale) == pytest.approx(655.35)
+    # And the declared plausibility bound admits it, rather than flagging a real
+    # event as implausible and excluding it from analysis.
+    assert ch.maximum >= 655.35
+
+
+def test_displacement_spans_the_full_unsigned_range() -> None:
+    ch = channel("vib_displacement_x")
+    assert decode([65535], ch.data_type, scale=ch.scale) == pytest.approx(65535)
+    assert ch.maximum >= 65535

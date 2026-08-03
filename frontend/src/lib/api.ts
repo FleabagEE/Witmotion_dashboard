@@ -226,6 +226,11 @@ export interface Spectrum {
       peak_hz: number
       peak_power: number
       false_alarm_probability: number
+      /** Share of energy in the busiest tenth of the window; ~0.1 when stationary. */
+      energy_concentration: number
+      /** True when the window holds an event rather than sustained vibration. */
+      transient: boolean
+      transient_note: string | null
       /** False means the tallest bar is noise and must not be read as a finding. */
       peak_significant: boolean
     } | null

@@ -62,6 +62,18 @@ class SpectrumAnalyzer
      */
     public const TREND_BINS = 3;
 
+    /** Blocks the window is divided into when testing for stationarity. */
+    public const STATIONARITY_BLOCKS = 10;
+
+    /**
+     * Energy fraction in one block above which the record is called transient.
+     *
+     * Ten blocks, so stationary content sits near 0.1. Half the energy in a
+     * tenth of the window is not a signal with a spectrum; it is an event with
+     * a time.
+     */
+    public const TRANSIENT_THRESHOLD = 0.5;
+
     /**
      * Measure the true sample rate from the timestamps themselves.
      *
@@ -148,6 +160,48 @@ class SpectrumAnalyzer
             .'sensor\'s own dominant-frequency registers, which are computed on-device at full rate.',
             $requestedHz, $nyquist,
         )];
+    }
+
+    /**
+     * How concentrated the record's energy is in time.
+     *
+     * A periodogram assumes a stationary signal - one whose statistics hold
+     * across the window. A three-second tap inside a fifteen-minute record
+     * violates that badly, and the result is not merely imprecise: an isolated
+     * burst correlates best with a wave slow enough that the window holds one
+     * half-cycle of it, so a transient reliably produces a confident peak at
+     * the bottom of the band that has nothing to do with how the structure
+     * actually rang.
+     *
+     * Returns the fraction of total energy in the busiest tenth of the record.
+     * For stationary noise that tends to 0.1; for a single short event it
+     * approaches 1.
+     *
+     * @param  array<int, float>  $residuals detrended
+     */
+    public function energyConcentration(array $residuals): float
+    {
+        $n = count($residuals);
+        if ($n < self::STATIONARITY_BLOCKS) {
+            return 0.0;
+        }
+
+        $blockSize = (int) floor($n / self::STATIONARITY_BLOCKS);
+        $blockEnergy = [];
+        for ($b = 0; $b < self::STATIONARITY_BLOCKS; $b++) {
+            $energy = 0.0;
+            for ($i = $b * $blockSize; $i < ($b + 1) * $blockSize; $i++) {
+                $energy += $residuals[$i] * $residuals[$i];
+            }
+            $blockEnergy[] = $energy;
+        }
+
+        $total = array_sum($blockEnergy);
+        if ($total <= 0.0) {
+            return 0.0;
+        }
+
+        return max($blockEnergy) / $total;
     }
 
     /**
@@ -406,6 +460,9 @@ class SpectrumAnalyzer
             ];
         }
 
+        $concentration = $this->energyConcentration($residuals);
+        $transient = $concentration >= self::TRANSIENT_THRESHOLD;
+
         $power = $this->lombScargle($times, $residuals, $frequencies);
 
         // The reported peak is searched above the trend bins. The full spectrum
@@ -431,10 +488,23 @@ class SpectrumAnalyzer
                 'peak_hz' => round($frequencies[$peakIndex], 4),
                 'peak_power' => round($power[$peakIndex], 6),
                 'false_alarm_probability' => round($fap, 6),
+                'energy_concentration' => round($concentration, 4),
+                'transient' => $transient,
+                'transient_note' => $transient
+                    ? sprintf(
+                        'This window is not stationary: %.0f%% of the energy falls in one tenth '
+                        .'of it, so the record holds an event rather than sustained vibration. A '
+                        .'periodogram assumes stationarity, and an isolated burst produces a '
+                        .'confident peak at the bottom of the band that says nothing about how '
+                        .'the structure rang. Narrow the window to the event itself.',
+                        $concentration * 100,
+                    )
+                    : null,
                 // The threshold is conventional, not derived. Above it, a peak
-                // is not evidence of anything and must not be presented as if
-                // it were.
-                'peak_significant' => $fap < 0.01,
+                // is not evidence of anything and must not be presented as if it
+                // were - and a transient's peak is an artefact of the method
+                // regardless of how statistically bright it looks.
+                'peak_significant' => $fap < 0.01 && ! $transient,
             ],
         ];
     }

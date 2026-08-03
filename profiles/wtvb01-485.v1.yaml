@@ -1,5 +1,5 @@
 schema_version: "1.0"
-profile_version: "1.0.0"
+profile_version: "1.1.0"
 manufacturer: WitMotion
 model: WTVB01-485
 protocol: modbus_rtu
@@ -17,6 +17,31 @@ verification_notes: >-
   Acceleration was independently validated: the three axes at rest sum to a
   vector magnitude of 0.993 g, which only the correct scale factor produces.
   Temperature read 24.2 degC against a plausibly 24 degC room.
+
+  CORRECTION 2026-08-03, profile 1.0.0 -> 1.1.0. Vibration velocity (0x3A-0x3C)
+  and displacement (0x41-0x43) were decoded as signed. They are magnitudes and
+  are unsigned; a signed read inverts every value above 32767 counts, i.e. above
+  327.67 mm/s or 32767 um. Neither the manufacturer's table nor 585 samples of
+  bench data caught it, because a stationary sensor never approaches the
+  boundary. Three seconds of hand-shaking did: raw 31932 read +319.32 mm/s and
+  the next sample, raw 33530, read -320.06.
+
+  This is the failure mode the verification gate is least able to catch on its
+  own - a decode that is correct across the whole range the sensor happens to be
+  exercised over, and wrong in exactly the regime the instrument exists to
+  measure. Dominant frequency (0x44-0x46) is corrected to unsigned at the same
+  time on the same reasoning, though it never approaches the boundary in
+  practice.
+
+  Acceleration (0x34-0x36) and temperature (0x40) remain signed, which is
+  correct: both take genuinely negative values, and acceleration is independently
+  confirmed by the three axes summing to 0.993 g at rest.
+
+  OPEN: the 36 condition indicators (0x47-0x6A) are still decoded as signed and
+  have NOT been re-examined. Some must be signed - skewness is negative for a
+  left-tailed distribution - while others, such as RMS and absolute average,
+  cannot be. They sit near zero on this bench and so carry the same latent risk
+  velocity did. Treat as unverified in the large-amplitude regime.
 
   Registers 0x37-0x39 are live on this unit and respond to excitation, but they
   do NOT appear in the manufacturer's register table at all - it jumps from 0x36
@@ -42,6 +67,20 @@ register_groups:
       - {key: accel_z, label: Acceleration Z, quantity: acceleration, unit: g, address: 0x36, scale: 0.00048828125, minimum: -16, maximum: 16}
 
   # Vibration velocity. Manual 10.4.6: VX (mm/s) = raw/100.
+  #
+  # UNSIGNED. This was wrong until 2026-08-03 and only a hard shake revealed it.
+  # Decoded as int16, a raw word of 33530 became -320.06 mm/s while the sample
+  # before it, raw 31932, read +319.32 - a 640 mm/s discontinuity between two
+  # adjacent readings of a smoothly rising magnitude. Vibration velocity here is
+  # a magnitude and never negative; above 327.67 mm/s a signed read wraps and
+  # inverts it. That is precisely the large-event regime structural monitoring
+  # exists for.
+  #
+  # The maximum is the full representable range, not a device limit. The
+  # previous 120 mm/s was tighter than the hardware actually outputs - readings
+  # above 300 mm/s were observed - and it flagged real event data as
+  # implausible, which the spectrum endpoint then excluded. A plausibility bound
+  # that rejects genuine large events is worse than a loose one.
   # 0.01 mm/s per count resolves the ISO 10816 zone boundaries (1.12 / 2.8 /
   # 7.1 mm/s) with room to spare.
   - key: vibration_velocity
@@ -49,9 +88,9 @@ register_groups:
     function_code: 3
     default_poll_hz: 5
     channels:
-      - {key: vib_velocity_x, label: Vibration velocity X, quantity: vibration_velocity, unit: mm/s, address: 0x3A, scale: 0.01, minimum: 0, maximum: 120}
-      - {key: vib_velocity_y, label: Vibration velocity Y, quantity: vibration_velocity, unit: mm/s, address: 0x3B, scale: 0.01, minimum: 0, maximum: 120}
-      - {key: vib_velocity_z, label: Vibration velocity Z, quantity: vibration_velocity, unit: mm/s, address: 0x3C, scale: 0.01, minimum: 0, maximum: 120}
+      - {key: vib_velocity_x, label: Vibration velocity X, quantity: vibration_velocity, unit: mm/s, address: 0x3A, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
+      - {key: vib_velocity_y, label: Vibration velocity Y, quantity: vibration_velocity, unit: mm/s, address: 0x3B, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
+      - {key: vib_velocity_z, label: Vibration velocity Z, quantity: vibration_velocity, unit: mm/s, address: 0x3C, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
 
   # Temperature, displacement and frequency read as one contiguous span:
   # 0x40 TEMP, 0x41-0x43 DX-DZ, 0x44-0x46 HZX-HZZ. One transaction is cheaper
@@ -63,16 +102,19 @@ register_groups:
     channels:
       # Manual 10.4.8: Temperature = TEMP[15:0]/100 degC.
       - {key: temperature, label: Chip temperature, quantity: temperature, unit: degC, address: 0x40, scale: 0.01, minimum: -40, maximum: 125}
+      # UNSIGNED, for the same reason as velocity: a displacement magnitude
+      # crossing 32767 um wrapped negative. Observed raw 33324 reading as
+      # -32212 um directly after raw 32707 read +32707.
       # Manual 10.4.9: DX(um) = raw, no scaling. Note the summary table's
       # "mm" units column contradicts the detailed section, which states um and
       # gives a formula with no divisor. The detailed section governs.
-      - {key: vib_displacement_x, label: Vibration displacement X, quantity: vibration_displacement, unit: um, address: 0x41, scale: 1.0, minimum: 0, maximum: 32767}
-      - {key: vib_displacement_y, label: Vibration displacement Y, quantity: vibration_displacement, unit: um, address: 0x42, scale: 1.0, minimum: 0, maximum: 32767}
-      - {key: vib_displacement_z, label: Vibration displacement Z, quantity: vibration_displacement, unit: um, address: 0x43, scale: 1.0, minimum: 0, maximum: 32767}
+      - {key: vib_displacement_x, label: Vibration displacement X, quantity: vibration_displacement, unit: um, address: 0x41, data_type: uint16, scale: 1.0, minimum: 0, maximum: 65535}
+      - {key: vib_displacement_y, label: Vibration displacement Y, quantity: vibration_displacement, unit: um, address: 0x42, data_type: uint16, scale: 1.0, minimum: 0, maximum: 65535}
+      - {key: vib_displacement_z, label: Vibration displacement Z, quantity: vibration_displacement, unit: um, address: 0x43, data_type: uint16, scale: 1.0, minimum: 0, maximum: 65535}
       # Manual 10.4.10: HZX (Hz) = raw/10.
-      - {key: vib_frequency_x, label: Dominant frequency X, quantity: dominant_frequency, unit: Hz, address: 0x44, scale: 0.1, minimum: 0, maximum: 300}
-      - {key: vib_frequency_y, label: Dominant frequency Y, quantity: dominant_frequency, unit: Hz, address: 0x45, scale: 0.1, minimum: 0, maximum: 300}
-      - {key: vib_frequency_z, label: Dominant frequency Z, quantity: dominant_frequency, unit: Hz, address: 0x46, scale: 0.1, minimum: 0, maximum: 300}
+      - {key: vib_frequency_x, label: Dominant frequency X, quantity: dominant_frequency, unit: Hz, address: 0x44, data_type: uint16, scale: 0.1, minimum: 0, maximum: 300}
+      - {key: vib_frequency_y, label: Dominant frequency Y, quantity: dominant_frequency, unit: Hz, address: 0x45, data_type: uint16, scale: 0.1, minimum: 0, maximum: 300}
+      - {key: vib_frequency_z, label: Dominant frequency Z, quantity: dominant_frequency, unit: Hz, address: 0x46, data_type: uint16, scale: 0.1, minimum: 0, maximum: 300}
 
   # Device clock. Manual 10.4.4. Packed byte pairs, decoded by the engine rather
   # than scaled, so they are exposed as diagnostics only.

@@ -216,6 +216,12 @@ export function Signal() {
           )}
         </div>
 
+        {s?.transient && (
+          <p className="border-t border-line bg-warning/5 px-4 py-2 text-[11px] leading-relaxed text-warning">
+            {s.transient_note}
+          </p>
+        )}
+
         {s && (
           <p className="border-t border-line px-4 py-2 text-[11px] text-ink-dim">
             <span className="mr-2 text-ink-dim">
@@ -230,9 +236,18 @@ export function Signal() {
               </>
             ) : (
               <>
-                No component here is distinguishable from noise (strongest is {s.peak_hz} Hz with a
-                false-alarm probability of {s.false_alarm_probability.toFixed(2)}). A still
-                structure has no spectrum to find.
+                {s.transient ? (
+                  <>
+                    Energy is present but concentrated in time, so it has a moment rather than a
+                    frequency. No component is reported.
+                  </>
+                ) : (
+                  <>
+                    No component here is distinguishable from noise (strongest is {s.peak_hz} Hz
+                    with a false-alarm probability of {s.false_alarm_probability.toFixed(2)}). A
+                    still structure has no spectrum to find.
+                  </>
+                )}
               </>
             )}
           </p>

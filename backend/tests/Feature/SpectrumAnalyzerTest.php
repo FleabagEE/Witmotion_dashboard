@@ -295,4 +295,49 @@ class SpectrumAnalyzerTest extends TestCase
         $this->assertGreaterThan($spectrum['min_hz'], $spectrum['lowest_reportable_hz']);
         $this->assertTrue($spectrum['detrended']);
     }
+
+    // --- a transient is an event, not a spectrum ---------------------------
+
+    public function test_a_short_burst_in_a_long_window_is_called_transient(): void
+    {
+        // Three seconds of shaking inside a fifteen-minute record - exactly the
+        // bench test that exposed this. Before the check it reported a peak at
+        // 0.026 Hz with a false-alarm probability of zero, which described the
+        // window length, not the structure.
+        $samples = [];
+        for ($i = 0; $i < 3600; $i++) {
+            $t = $i / 4.0;                       // 4 Hz over 900 s
+            $shaking = $t > 400 && $t < 403;     // a 3 s event
+            $samples[] = ['t' => $t, 'v' => $shaking ? 300 * sin(2 * M_PI * 2.3 * $t) : 0.5];
+        }
+        $result = $this->analyzer->analyse($samples);
+
+        $this->assertTrue($result['spectrum']['transient']);
+        $this->assertFalse(
+            $result['spectrum']['peak_significant'],
+            'a transient produced a peak reported as a real spectral component',
+        );
+        $this->assertStringContainsString('Narrow the window', $result['spectrum']['transient_note']);
+    }
+
+    public function test_sustained_vibration_is_not_called_transient(): void
+    {
+        // The check must not fire on the thing it is protecting: a structure
+        // ringing steadily is stationary and has a real spectrum.
+        $result = $this->analyzer->analyse($this->sine(hz: 1.5, sampleHz: 8.0, seconds: 300));
+
+        $this->assertFalse($result['spectrum']['transient']);
+        $this->assertTrue($result['spectrum']['peak_significant']);
+        $this->assertEqualsWithDelta(1.5, $result['spectrum']['peak_hz'], 0.05);
+    }
+
+    public function test_energy_concentration_separates_the_two_cases(): void
+    {
+        $steady = array_map(fn ($i) => sin($i / 3.0), range(0, 999));
+        $burst = array_map(fn ($i) => ($i > 500 && $i < 540) ? 100.0 : 0.0, range(0, 999));
+
+        // Ten blocks, so stationary content sits near a tenth.
+        $this->assertLessThan(0.2, $this->analyzer->energyConcentration($steady));
+        $this->assertGreaterThan(0.9, $this->analyzer->energyConcentration($burst));
+    }
 }
