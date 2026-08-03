@@ -158,3 +158,49 @@ reading above roughly 32 units (raw 32000, scale 0.001) as unverified.
 
 Nothing alarms on these channels, so the exposure is analytical rather than
 operational.
+
+
+## The acceleration registers do not carry a waveform
+
+0x34-0x36 are documented as acceleration and decode correctly, but they are not
+an instantaneous signal. Measured on the connected unit:
+
+- 390 reads in 12 s at 32.5 Hz - **zero** value changes, one distinct value;
+- 75,937 stored samples over three hours - only 3,093 changes, so the register
+  content is static for 96% of reads;
+- during real taps (velocity 4.4-5.2 mm/s, displacement 104-237 um) the
+  acceleration span across the whole second was 0.0000-0.0015 g. A 237 um
+  excursion near 50 Hz implies roughly 2 g, and none of it appeared.
+
+The register tracks slow changes - tilt moves it reliably - and rejects
+transients. The manual states that "advanced digital filtering technology is
+adopted" and documents no sampling-rate or bandwidth register at all; only SAVE,
+BAUD and the device address are configurable in section 6.4.
+
+**Raising the baud rate cannot fix this.** The measurement above was taken at
+32.5 Hz polling, three and a half times the appliance's normal rate, and the
+value still never changed. The limit is the device's output, not the link.
+
+What the device *does* give at full rate is computed internally from its own
+256 Hz sampling: vibration velocity, displacement and dominant frequency all
+respond to taps that acceleration misses entirely. Those are the channels to use
+for vibration; acceleration is the channel for orientation.
+
+To confirm this on any unit, or to test whether a configuration change has helped:
+
+```bash
+sudo systemctl stop quakevault-acq
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-probe \
+    --start 0x34 --count 3 --update-rate 20
+sudo systemctl start quakevault-acq
+```
+
+Tap the sensor throughout. A register carrying an instantaneous quantity changes
+on nearly every read; this one reports STATIC.
+
+**Unresolved.** The vendor Windows software exposes a sampling-rate control
+(256 Hz, measurable 1-64 Hz) and a displacement range mode, neither of which
+appears in the manual's register table. Those writes land in undocumented
+registers - 0x2A is one of them, holding 50 and matching the vendor's "frequency
+base 50". Whether one of them also governs the acceleration output is not known,
+and it is not worth guessing at blind writes to find out.

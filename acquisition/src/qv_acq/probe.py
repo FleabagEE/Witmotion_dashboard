@@ -114,6 +114,62 @@ def sweep(client, slave, start, count, mapping, previous, show_all) -> list[int]
     return words
 
 
+def measure_update_rate(client, slave, start, count, mapping, seconds: float) -> int:
+    """How often each register actually changes, against how often we ask.
+
+    A register that never changes between reads is not being sampled quickly by
+    the device, whatever the link speed - and no amount of baud rate will make it
+    livelier. That distinction is the whole point of this mode: it separates "the
+    bus is too slow" from "the sensor is not producing new values", which look
+    identical on a chart.
+
+    Run it while tapping or shaking the sensor. A register carrying an
+    instantaneous quantity will change on nearly every read; one carrying a
+    filtered or slowly-updated quantity will not.
+    """
+    samples: list[tuple[float, list[int]]] = []
+    started = time.monotonic()
+    while time.monotonic() - started < seconds:
+        words = read_span(client, slave, start, count)
+        if words is None:
+            print("read failed - is the acquisition service still holding the port?")
+            return 1
+        samples.append((time.monotonic() - started, words))
+
+    n = len(samples)
+    if n < 2:
+        print("too few reads to measure")
+        return 1
+
+    poll_hz = n / seconds
+    print(f"polled {n} times in {seconds:.0f} s = {poll_hz:.1f} Hz per register\n")
+    print(f"{'reg':<6} {'changes':>8} {'rate':>10} {'distinct':>9}  interpretation")
+    print("-" * 78)
+
+    for i in range(count):
+        address = start + i
+        series = [s[1][i] for s in samples]
+        changes = sum(1 for j in range(1, n) if series[j] != series[j - 1])
+        distinct = len(set(series))
+        rate = changes / seconds
+        label = mapping.get(address, (f"0x{address:02X}",))[0]
+
+        if distinct == 1:
+            verdict = "STATIC - not updating at all during this window"
+        elif changes / (n - 1) > 0.8:
+            verdict = "live - changes on nearly every read"
+        elif changes / (n - 1) > 0.2:
+            verdict = "updating slower than we poll"
+        else:
+            verdict = "mostly held - filtered or slow-updating"
+
+        print(f"0x{address:02X}   {changes:>8} {rate:>8.1f}/s {distinct:>9}  {label}: {verdict}")
+
+    print("\nA register that is STATIC or mostly held is limited by the device, not")
+    print("the bus. Polling it faster - or raising the baud rate - cannot help.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="qv-probe",
@@ -131,6 +187,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--watch", action="store_true",
                    help="re-read continuously and print only what changed")
     p.add_argument("--interval", type=float, default=0.5, help="seconds between sweeps in --watch")
+    p.add_argument("--update-rate", type=float, metavar="SECONDS",
+                   help="measure how often each register actually changes, over N seconds. "
+                        "Run it while moving the sensor: it separates a slow bus from a "
+                        "register the device is not updating.")
     return p
 
 
@@ -150,13 +210,21 @@ def main(argv: list[str] | None = None) -> int:
     end = args.start + args.count - 1
     print(f"{args.port} @ {args.baud} baud, slave 0x{args.slave:02X}, "
           f"registers 0x{args.start:02X}-0x{end:02X}", flush=True)
-    if args.watch:
+    if args.update_rate:
+        print(f"measuring update rate for {args.update_rate:.0f} s - "
+              "move or tap the sensor now\n", flush=True)
+    elif args.watch:
         print("watching - move, tilt or tap the sensor; changed registers are marked *")
         print("Ctrl-C to stop\n", flush=True)
     else:
         print()
 
     try:
+        if args.update_rate:
+            return measure_update_rate(
+                client, args.slave, args.start, args.count, mapping, args.update_rate,
+            )
+
         previous = sweep(client, args.slave, args.start, args.count, mapping, None, True)
         if previous is None:
             return 1
