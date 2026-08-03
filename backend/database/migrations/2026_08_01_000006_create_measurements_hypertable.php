@@ -52,7 +52,16 @@ return new class extends Migration
                 timescaledb.compress_orderby = 'time DESC'
             )
         SQL);
-        DB::statement("SELECT add_compression_policy('measurements', INTERVAL '7 days')");
+        // Two days, not seven. Measured on this appliance: ~600 000 rows an
+        // hour at roughly 305 bytes each is about 4.4 GB a day uncompressed, so
+        // a seven-day threshold means carrying a 31 GB uncompressed head before
+        // any of it shrinks. Two days brings that to about 9 GB.
+        //
+        // Two rather than one because the spool has to be able to backfill into
+        // an uncompressed chunk after an outage. It holds 500 000 envelopes,
+        // measured at 10.1 hours of coverage, so two days clears the longest
+        // backfill by a wide margin.
+        DB::statement("SELECT add_compression_policy('measurements', INTERVAL '2 days')");
 
         // Raw retention is configurable per deployment; the hourly rollup below
         // outlives it, so long-term trends survive raw expiry.

@@ -41,18 +41,29 @@ def nums(k):
 span = (float(rows[-1]['uptime_s']) - float(rows[0]['uptime_s'])) / 3600
 print(f"{len(rows)} samples over {span:.1f} h\n")
 
-def line(label, key, unit="", drift=True):
+def line(label, key, unit="", dp=0):
+    """One metric over two short lines.
+
+    Kept under 60 columns: the first version ran to 110 and wrapped mid-number
+    in a real terminal, which made a healthy report look like garbage.
+
+    Precision is per metric and not cosmetic - rounding everything to integers
+    displayed a bus utilisation of 0.65 as "1" and a poll rate of 9.26 Hz as
+    "9", which is the report lying about the thing it exists to show.
+    """
     v = nums(key)
-    if not v: return
-    txt = f"  {label:<26} first {v[0]:>12,.1f}  last {v[-1]:>12,.1f}  min {min(v):>10,.1f}  max {max(v):>10,.1f} {unit}"
-    print(txt)
+    if not v:
+        return
+    print(f"  {label}")
+    span = f"(min {min(v):,.{dp}f}  max {max(v):,.{dp}f})"
+    print(f"    {v[0]:,.{dp}f} -> {v[-1]:,.{dp}f} {unit}".rstrip() + f"  {span}")
 
 line("acquisition RSS", "acq_rss_kb", "KB")
 line("forwarder RSS", "fwd_rss_kb", "KB")
 line("spool backlog", "backlog")
 line("spool total", "spool_total")
-line("measured poll Hz", "poll_hz", "Hz")
-line("bus utilisation", "bus_util")
+line("measured poll Hz", "poll_hz", "Hz", dp=2)
+line("bus utilisation", "bus_util", dp=3)
 line("DB rows", "db_rows")
 line("live dropped", "live_dropped")
 
@@ -61,24 +72,23 @@ print()
 rss = nums("acq_rss_kb")
 if rss and len(rss) > 3:
     growth = (rss[-1] - rss[0]) / max(rss[0], 1) * 100
-    verdict = "OK" if abs(growth) < 25 else "INVESTIGATE - looks like a leak"
-    print(f"  acquisition memory drift over the run: {growth:+.1f}%   {verdict}")
+    verdict = "OK" if abs(growth) < 25 else "INVESTIGATE - possible leak"
+    print(f"  memory drift {growth:+.1f}%  {verdict}")
 
 bl = nums("backlog")
 if bl:
     stuck = bl[-1] > 500 and bl[-1] >= max(bl) * 0.9
-    print(f"  spool backlog ends at {bl[-1]:,.0f}   " +
+    print(f"  backlog ends at {bl[-1]:,.0f}  " +
           ("INVESTIGATE - not draining" if stuck else "OK - drains"))
 
 hz = nums("poll_hz")
 if hz and len(hz) > 3:
     sag = (hz[-1] - hz[0]) / max(hz[0], 1e-9) * 100
-    print(f"  poll rate drift: {sag:+.1f}%   " + ("OK" if abs(sag) < 15 else "INVESTIGATE - rate sagging"))
+    print(f"  poll rate drift {sag:+.1f}%  " + ("OK" if abs(sag) < 15 else "INVESTIGATE - sagging"))
 
 drop = nums("live_dropped")
 if drop:
-    print(f"  live frames dropped: {drop[-1]-drop[0]:,.0f} over the run "
-          "(lossy by design - the durable path is the record)")
+    print(f"  live frames dropped {drop[-1]-drop[0]:,.0f}  (lossy by design)")
 PY
 }
 

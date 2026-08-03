@@ -288,3 +288,40 @@ and structural vibration displacement is usually microns to tens of microns.
 But a hand tap on this bench produced excursions well past 600 um, which would
 clip. Fine mode suits a mounted sensor on a real structure; coarse mode suits
 bench testing where the sensor gets handled.
+
+## Tilt lags the sensor by about nine seconds
+
+Inclination is derived from the acceleration registers, and those are filtered
+inside the device. Measured on 2026-08-03 across four movements:
+
+- **settling time 9.0 s median, 10.0 s worst**
+- **drift after the sensor physically stopped: 4.33 deg median, 5.78 deg worst**
+
+The measurement is only possible because acceleration amplitude (0x37-0x39) and
+tilt arrive in the same Modbus transaction and share a timestamp. Amplitude
+responds immediately, so it says when the motion actually ended; tilt says how
+long it took to catch up. Without the fast channel there is no way to separate
+"the operator moved it slowly" from "the sensor is lagging" - the reading looks
+like it is tracking either way.
+
+```bash
+php artisan measurements:check-tilt-response --minutes=30
+```
+
+**It is not the appliance.** The live path measures about 25 ms end to end,
+websocket included. Nine seconds of it belongs to the device.
+
+**It cannot be corrected in software.** The filter is not documented - the manual
+describes no bandwidth or filter register, only that "advanced digital filtering
+technology is adopted" - and undoing an unspecified filter would be guesswork
+presented as a reading.
+
+**It rarely matters for the purpose.** Inclination here answers "has the mounting
+moved", and a wall shifts over days. Nine seconds is invisible against that. The
+lag only appears in a hand test, which is exactly where it is most alarming and
+least important.
+
+**Worth trying if it does matter:** the vendor software exposes a sampling-rate
+control (32K down to 64 Hz, each labelled with a measurable frequency band).
+Whether it governs the acceleration filter is unknown. Change it, save it - the
+setting does not persist without SAVE - and repeat the measurement above.
