@@ -68,6 +68,11 @@ export const api = {
         `&channels=${encodeURIComponent(channels.join(','))}` +
         `&seconds=${seconds}&max_points=${maxPoints}`,
     ),
+  spectrum: (sensorId: string, channelKey: string, seconds: number) =>
+    request<Spectrum>(
+      `/spectrum?sensor_id=${encodeURIComponent(sensorId)}` +
+        `&channel_key=${encodeURIComponent(channelKey)}&seconds=${seconds}`,
+    ),
   alarms: (unacknowledgedOnly = false) =>
     request<{ data: AlarmRow[] }>(`/alarms${unacknowledgedOnly ? '?unacknowledged_only=1' : ''}`),
   acknowledge: (id: number, note: string) =>
@@ -189,4 +194,49 @@ export interface AlarmRow {
   provisional: boolean
   actionable: boolean
   thresholds_confirmed_by: string | null
+}
+
+export interface Spectrum {
+  sensor_id: string
+  channel_key: string
+  unit: string | null
+  window_seconds: number
+  verification_status: string | null
+  analysis: {
+    samples: number
+    samples_available: number
+    /** >1 means the window was thinned to bound cost; surfaced, never silent. */
+    decimation: number
+    sample_hz: number | null
+    jitter_ms: number | null
+    span_seconds: number
+    defensible_max_hz?: number
+    nyquist_hz?: number
+    requested_hz?: number
+    allowed: boolean
+    explanation: string
+    spectrum: {
+      frequencies: number[]
+      power: number[]
+      min_hz: number
+      detrended: boolean
+      /** Bottom bins barred from being reported: drift is not vibration. */
+      trend_bins_excluded: number
+      lowest_reportable_hz: number
+      peak_hz: number
+      peak_power: number
+      false_alarm_probability: number
+      /** False means the tallest bar is noise and must not be read as a finding. */
+      peak_significant: boolean
+    } | null
+  }
+  device_reported: {
+    channel_key: string
+    unit: string
+    mean_hz: number
+    min_hz: number
+    max_hz: number
+    samples: number
+    note: string
+  } | null
 }

@@ -236,4 +236,63 @@ class SpectrumAnalyzerTest extends TestCase
             $this->assertLessThanOrEqual(1.0, $p);
         }
     }
+
+    // --- drift must not masquerade as vibration ----------------------------
+
+    public function test_a_linear_ramp_is_removed(): void
+    {
+        $times = array_map(fn ($i) => $i / 8.0, range(0, 99));
+        $values = array_map(fn ($t) => 5.0 + 2.0 * $t, $times);
+
+        foreach ($this->analyzer->detrend($times, $values) as $residual) {
+            $this->assertEqualsWithDelta(0.0, $residual, 1e-9);
+        }
+    }
+
+    public function test_a_drifting_but_still_sensor_reports_no_finding(): void
+    {
+        // The case that prompted this: an accelerometer sitting motionless on a
+        // desk, its bias creeping with temperature. Before detrending this
+        // reported a "significant component" at the bottom bin with a
+        // false-alarm probability of zero - drift wearing a resonance's
+        // clothes.
+        $samples = [];
+        for ($i = 0; $i < 800; $i++) {
+            $t = $i / 8.0;
+            $samples[] = ['t' => $t, 'v' => 0.947 + 0.00002 * $t];
+        }
+        $result = $this->analyzer->analyse($samples);
+
+        $this->assertFalse(
+            $result['spectrum']['peak_significant'],
+            'a monotonic drift was reported as a real spectral component',
+        );
+    }
+
+    public function test_a_real_tone_survives_detrending(): void
+    {
+        // Detrending must not cost us the signal it is protecting.
+        $samples = [];
+        for ($i = 0; $i < 800; $i++) {
+            $t = $i / 8.0;
+            $samples[] = ['t' => $t, 'v' => 0.947 + 0.0001 * $t + 0.05 * sin(2 * M_PI * 1.5 * $t)];
+        }
+        $result = $this->analyzer->analyse($samples);
+
+        $this->assertEqualsWithDelta(1.5, $result['spectrum']['peak_hz'], 0.05);
+        $this->assertTrue($result['spectrum']['peak_significant']);
+    }
+
+    public function test_the_trend_bins_are_plotted_but_not_reportable(): void
+    {
+        $result = $this->analyzer->analyse($this->sine(hz: 1.0, sampleHz: 8.0, seconds: 300));
+        $spectrum = $result['spectrum'];
+
+        // Still returned in full, so the drift remains visible on the chart...
+        $this->assertCount(SpectrumAnalyzer::FREQUENCY_BINS, $spectrum['frequencies']);
+        // ...but the reported peak can never come from the excluded bins.
+        $this->assertGreaterThanOrEqual($spectrum['lowest_reportable_hz'], $spectrum['peak_hz']);
+        $this->assertGreaterThan($spectrum['min_hz'], $spectrum['lowest_reportable_hz']);
+        $this->assertTrue($spectrum['detrended']);
+    }
 }

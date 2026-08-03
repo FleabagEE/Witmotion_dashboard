@@ -46,6 +46,23 @@ class SpectrumAnalyzer
     public const FREQUENCY_BINS = 256;
 
     /**
+     * Bins at the bottom of the band that may not be reported as a finding.
+     *
+     * A slow drift - thermal bias, the mounting settling, gravity's projection
+     * changing as something creeps - is not periodic, but over a finite window
+     * it is indistinguishable from the bottom of the frequency range and lands
+     * there with enormous power and a false-alarm probability of essentially
+     * zero. Detrending removes the linear part; what survives is curvature, and
+     * it still piles up in the first bins.
+     *
+     * Structural vibration is not found here in any case: DIN 4150-3 and
+     * BS 7385-2 concern roughly 1-100 Hz. So the bins are still plotted - the
+     * drift is real and worth seeing - but never announced as the strongest
+     * component.
+     */
+    public const TREND_BINS = 3;
+
+    /**
      * Measure the true sample rate from the timestamps themselves.
      *
      * Deliberately not read from channels.configured_hz: that records what the
@@ -131,6 +148,53 @@ class SpectrumAnalyzer
             .'sensor\'s own dominant-frequency registers, which are computed on-device at full rate.',
             $requestedHz, $nyquist,
         )];
+    }
+
+    /**
+     * Remove the least-squares linear trend.
+     *
+     * Standard preprocessing, and not optional here. Subtracting the mean - all
+     * Lomb-Scargle does on its own - leaves any ramp in the record, and over a
+     * finite window a ramp is fitted as a very-low-frequency sinusoid with huge
+     * power. Without this an accelerometer sitting perfectly still reports a
+     * "significant component" at the bottom of the band, which is drift wearing
+     * a resonance's clothes.
+     *
+     * @param  array<int, float>  $times
+     * @param  array<int, float>  $values
+     * @return array<int, float>  residuals about the fitted line
+     */
+    public function detrend(array $times, array $values): array
+    {
+        $n = count($values);
+        if ($n < 2) {
+            return $values;
+        }
+
+        $meanT = array_sum($times) / $n;
+        $meanV = array_sum($values) / $n;
+
+        $covariance = 0.0;
+        $varianceT = 0.0;
+        foreach ($times as $i => $t) {
+            $dt = $t - $meanT;
+            $covariance += $dt * ($values[$i] - $meanV);
+            $varianceT += $dt * $dt;
+        }
+
+        // All samples at one instant: no slope is defined, and there is nothing
+        // to remove beyond the mean.
+        if ($varianceT <= 0.0) {
+            return array_map(fn ($v) => $v - $meanV, $values);
+        }
+
+        $slope = $covariance / $varianceT;
+
+        return array_map(
+            fn ($v, $t) => $v - ($meanV + $slope * ($t - $meanT)),
+            $values,
+            $times,
+        );
     }
 
     /**
@@ -312,22 +376,58 @@ class SpectrumAnalyzer
             $frequencies[] = $minHz + $i * $step;
         }
 
-        $power = $this->lombScargle($times, $values, $frequencies);
+        $residuals = $this->detrend($times, $values);
 
-        $peakIndex = 0;
-        foreach ($power as $i => $p) {
-            if ($p > $power[$peakIndex]) {
+        // A record that is exactly a straight line has no spectral content. Its
+        // residuals are floating-point residue, and the periodogram normalises
+        // by their variance - so without this guard it divides ~1e-18 by ~1e-36
+        // and manufactures a towering peak out of rounding error. Judged
+        // relative to the data's own magnitude, because "small" is meaningless
+        // for a quantity that might be measured in g or in micrometres.
+        $scale = max(array_map('abs', $values)) ?: 1.0;
+        $residualRms = sqrt(
+            array_sum(array_map(fn ($r) => $r * $r, $residuals)) / count($residuals)
+        );
+
+        if ($residualRms <= $scale * 1e-12) {
+            return $base + [
+                'spectrum' => [
+                    'frequencies' => array_map(fn ($f) => round($f, 4), $frequencies),
+                    'power' => array_fill(0, count($frequencies), 0.0),
+                    'min_hz' => round($minHz, 4),
+                    'detrended' => true,
+                    'trend_bins_excluded' => self::TREND_BINS,
+                    'lowest_reportable_hz' => round($frequencies[self::TREND_BINS], 4),
+                    'peak_hz' => 0.0,
+                    'peak_power' => 0.0,
+                    'false_alarm_probability' => 1.0,
+                    'peak_significant' => false,
+                ],
+            ];
+        }
+
+        $power = $this->lombScargle($times, $residuals, $frequencies);
+
+        // The reported peak is searched above the trend bins. The full spectrum
+        // including them is still returned and plotted; it is only barred from
+        // being announced as the strongest component.
+        $peakIndex = self::TREND_BINS;
+        for ($i = self::TREND_BINS; $i < count($power); $i++) {
+            if ($power[$i] > $power[$peakIndex]) {
                 $peakIndex = $i;
             }
         }
 
-        $fap = $this->falseAlarmProbability($power[$peakIndex], count($frequencies));
+        $fap = $this->falseAlarmProbability($power[$peakIndex], count($frequencies) - self::TREND_BINS);
 
         return $base + [
             'spectrum' => [
                 'frequencies' => array_map(fn ($f) => round($f, 4), $frequencies),
                 'power' => array_map(fn ($p) => round($p, 6), $power),
                 'min_hz' => round($minHz, 4),
+                'detrended' => true,
+                'trend_bins_excluded' => self::TREND_BINS,
+                'lowest_reportable_hz' => round($frequencies[self::TREND_BINS], 4),
                 'peak_hz' => round($frequencies[$peakIndex], 4),
                 'peak_power' => round($power[$peakIndex], 6),
                 'false_alarm_probability' => round($fap, 6),

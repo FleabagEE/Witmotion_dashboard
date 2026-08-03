@@ -6,6 +6,7 @@ import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
 import { Live } from './pages/Live'
 import { SensorDetail } from './pages/SensorDetail'
+import { Signal } from './pages/Signal'
 import { Alarms } from './pages/Alarms'
 
 const queryClient = new QueryClient({
@@ -17,6 +18,7 @@ function Nav({ user, onSignOut }: { user: CurrentUser; onSignOut: () => void }) 
   const links = [
     { to: '/', label: 'Live' },
     { to: '/system', label: 'System' },
+    { to: '/signal', label: 'Signal' },
     { to: '/alarms', label: 'Alarms' },
   ]
 
@@ -88,6 +90,7 @@ export default function App() {
             <Route path="/" element={<Live />} />
             <Route path="/system" element={<Overview />} />
             <Route path="/sensors/:sensorId" element={<SensorDetail />} />
+            <Route path="/signal" element={<Signal />} />
             <Route path="/alarms" element={<Alarms user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
