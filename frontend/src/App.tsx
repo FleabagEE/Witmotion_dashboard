@@ -7,6 +7,7 @@ import { Overview } from './pages/Overview'
 import { Live } from './pages/Live'
 import { SensorDetail } from './pages/SensorDetail'
 import { Signal } from './pages/Signal'
+import { Kiosk } from './pages/Kiosk'
 import { Alarms } from './pages/Alarms'
 
 const queryClient = new QueryClient({
@@ -81,6 +82,18 @@ export default function App() {
   if (checking) return null
   if (!user) return <Login onSignedIn={setUser} />
 
+  // A kiosk session gets the wall display and nothing else - no navigation, no
+  // sign-out, no route to anywhere. The token can only read, so this is
+  // presentation rather than the security boundary, but a screen in a corridor
+  // should not offer controls it would refuse anyway.
+  if (user.role === 'kiosk') {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Kiosk />
+      </QueryClientProvider>
+    )
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
@@ -91,6 +104,7 @@ export default function App() {
             <Route path="/system" element={<Overview />} />
             <Route path="/sensors/:sensorId" element={<SensorDetail />} />
             <Route path="/signal" element={<Signal />} />
+            <Route path="/kiosk" element={<Kiosk />} />
             <Route path="/alarms" element={<Alarms user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

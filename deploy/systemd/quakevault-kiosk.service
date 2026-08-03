@@ -1,0 +1,64 @@
+[Unit]
+Description=QuakeVault wall display
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+After=graphical.target network-online.target
+Wants=network-online.target
+# Deliberately not required by anything, and requiring nothing. A wall display
+# is an output: if it is down, monitoring, alarms and notifications are all
+# unaffected. The reverse must also hold - nothing about this unit may be able
+# to interfere with acquisition.
+
+# Restart rate limit. These belong in [Unit], not [Service] - systemd ignores
+# them there, so a burst loop would have gone unlimited.
+# Long enough that a genuinely broken configuration does not spin the CPU, short
+# enough that a transient failure recovers unattended.
+StartLimitIntervalSec=300
+StartLimitBurst=20
+
+[Service]
+Type=simple
+User=quakevault-kiosk
+Group=quakevault-kiosk
+
+# The display this attaches to. Both are set here rather than inherited so the
+# unit behaves the same whether it starts at boot or is started by hand.
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/quakevault-kiosk/.Xauthority
+Environment=KIOSK_URL=http://127.0.0.1:8000/kiosk
+Environment=KIOSK_PROFILE=/var/lib/quakevault-kiosk/profile
+
+ExecStart=/var/www/quakevault-industrial/deploy/kiosk/quakevault-kiosk.sh
+
+# The watchdog. A browser that crashes, is killed by the OOM killer, or is
+# closed by somebody at the screen comes straight back.
+Restart=always
+RestartSec=5
+StateDirectory=quakevault-kiosk
+
+# --- hardening ---------------------------------------------------------------
+# Lighter than the other units by necessity: a browser needs a lot. What matters
+# here is that it holds no credential beyond a read-only kiosk token and cannot
+# touch the acquisition path.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# No serial access whatsoever: this process must never be able to reach the bus.
+DeviceAllow=/dev/dri rw
+DevicePolicy=closed
+
+ReadWritePaths=/var/lib/quakevault-kiosk
+
+[Install]
+WantedBy=graphical.target

@@ -204,3 +204,40 @@ appears in the manual's register table. Those writes land in undocumented
 registers - 0x2A is one of them, holding 50 and matching the vendor's "frequency
 base 50". Whether one of them also governs the acceleration output is not known,
 and it is not worth guessing at blind writes to find out.
+
+## Kiosk mode
+
+A wall display for a control room: four figures, large, no controls. Reached by
+signing in as a `kiosk` user, which renders the display and nothing else - no
+navigation, no sign-out, no route anywhere.
+
+That is presentation, not the boundary. The boundary is the token: a kiosk
+carries only `read`, so a screen anyone can walk up to cannot acknowledge an
+alarm or change a setting even if somebody reaches the API behind it.
+`KioskTest` proves it against a real alarm record, and proves an operator can
+acknowledge the same one - otherwise the first test would pass for the wrong
+reason.
+
+**Staleness is stated, not implied.** An unattended screen showing a plausible
+frozen number is worse than a blank one, so the display tracks the age of its
+newest reading against a ticking clock and says "no data - last reading 26s ago"
+in red, dimming the figures. Verified by stopping acquisition and watching it
+change.
+
+Install:
+
+```bash
+sudo useradd -r -m -d /home/quakevault-kiosk quakevault-kiosk
+sudo install -m 0644 deploy/systemd/quakevault-kiosk.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now quakevault-kiosk
+```
+
+The launcher waits for the dashboard to answer before starting a browser, rather
+than racing it - on a cold boot the browser usually wins against PHP and the
+database, and a kiosk that opened on a connection error would sit there until
+somebody noticed. systemd restarts it whenever it exits, rate-limited to 20
+attempts in 300 s.
+
+**Not addressed.** The unit assumes an X session on `:0` with a logged-in seat.
+A headless appliance needs a display manager configured for autologin first; that
+is site setup and is not scripted here.
