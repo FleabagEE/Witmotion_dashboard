@@ -29,10 +29,12 @@ interface CardSpec {
   traces: Trace[]
   decimals: number
   note?: string
+  /** Acceleration only: gravity's static bias would otherwise dominate the axis. */
+  offsetRemovable?: boolean
 }
 
 const CARDS: CardSpec[] = [
-  { title: 'Acceleration', unit: 'g', traces: axisTraces('accel'), decimals: 3 },
+  { title: 'Acceleration', unit: 'g', traces: axisTraces('accel'), decimals: 4, offsetRemovable: true },
   { title: 'Vibration velocity', unit: 'mm/s', traces: axisTraces('vib_velocity'), decimals: 2 },
   { title: 'Vibration displacement', unit: 'µm', traces: axisTraces('vib_displacement'), decimals: 0 },
   { title: 'Dominant frequency', unit: 'Hz', traces: axisTraces('vib_frequency'), decimals: 1 },
@@ -209,6 +211,7 @@ export function Live() {
             decimals={card.decimals}
             resolution={resolution}
             note={card.note}
+            offsetRemovable={card.offsetRemovable}
           />
         ))}
       </div>

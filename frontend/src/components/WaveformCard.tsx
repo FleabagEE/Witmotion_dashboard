@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { SeriesPoint } from '../lib/api'
 
@@ -24,6 +24,7 @@ export function WaveformCard({
   decimals = 3,
   resolution,
   note,
+  offsetRemovable = false,
 }: {
   title: string
   unit: string
@@ -32,7 +33,22 @@ export function WaveformCard({
   decimals?: number
   resolution?: 'raw_bucketed' | 'hourly_rollup'
   note?: string
+  /**
+   * Offer to plot deviation from each trace's mean instead of absolute value.
+   *
+   * For acceleration this is the difference between a readable chart and an
+   * unreadable one. At rest the three axes read roughly 0.95, 0.18 and 0.21 g -
+   * that is gravity resolved onto the sensor's tilt, a static bias carrying no
+   * vibration information. It forces the axis to span 0.77 g while the actual
+   * vibration is under 0.01 g, so the signal ends up occupying about one
+   * percent of the plot height and tapping the structure appears to do nothing.
+   *
+   * Removing it is what a vibration instrument does; the offset itself is
+   * still reported below the chart so nothing is silently discarded.
+   */
+  offsetRemovable?: boolean
 }) {
+  const [removeOffset, setRemoveOffset] = useState(offsetRemovable)
   const latest = useMemo(() => {
     const out: Record<string, number | null> = {}
     traces.forEach((t) => {
@@ -48,6 +64,23 @@ export function WaveformCard({
     return out
   }, [series, traces])
 
+  /**
+   * The static offset removed from each trace, over the visible window.
+   *
+   * Computed per window rather than held fixed, so that re-levelling the sensor
+   * or switching window does not leave the chart centred on a stale baseline.
+   */
+  const offsets = useMemo(() => {
+    const out: Record<string, number> = {}
+    traces.forEach((t) => {
+      const values = (series?.[t.key] ?? []).map((p) => p.v).filter((v): v is number => v !== null)
+      out[t.key] = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
+    })
+    return out
+  }, [series, traces])
+
+  const active = removeOffset && offsetRemovable
+
   const option = useMemo(
     () => ({
       animation: false,
@@ -57,7 +90,8 @@ export function WaveformCard({
         backgroundColor: '#131a22',
         borderColor: '#24313d',
         textStyle: { color: '#e6edf3', fontSize: 11 },
-        valueFormatter: (v: number) => (v == null ? '—' : `${v.toFixed(decimals)} ${unit}`),
+        valueFormatter: (v: number) =>
+          v == null ? '—' : `${active ? (v >= 0 ? '+' : '') : ''}${v.toFixed(decimals)} ${unit}`,
       },
       xAxis: {
         type: 'time',
@@ -67,7 +101,8 @@ export function WaveformCard({
       },
       yAxis: {
         type: 'value',
-        name: unit,
+        // Named so the chart cannot be misread as absolute when it is not.
+        name: active ? `Δ ${unit}` : unit,
         nameLocation: 'end',
         nameGap: 8,
         nameTextStyle: { color: '#6d7f90', fontSize: 10, align: 'left' },
@@ -86,10 +121,13 @@ export function WaveformCard({
         smooth: false,
         lineStyle: { width: 1.5, color: t.colour },
         itemStyle: { color: t.colour },
-        data: (series?.[t.key] ?? []).map((p) => [p.t, p.v]),
+        data: (series?.[t.key] ?? []).map((p) => [
+          p.t,
+          p.v === null ? null : active ? p.v - offsets[t.key] : p.v,
+        ]),
       })),
     }),
-    [series, traces, unit, decimals],
+    [series, traces, unit, decimals, active, offsets],
   )
 
   const hasData = traces.some((t) => (series?.[t.key] ?? []).some((p) => p.v !== null))
@@ -100,10 +138,19 @@ export function WaveformCard({
         <div>
           <h2 className="text-sm font-semibold tracking-wide">{title}</h2>
           <p className="mt-0.5 text-[11px] text-ink-dim">
-            {unit}
+            {active ? `Δ ${unit} from static offset` : unit}
             {resolution === 'hourly_rollup' && ' · hourly averages, peaks flattened'}
             {note && ` · ${note}`}
           </p>
+          {offsetRemovable && (
+            <button
+              type="button"
+              onClick={() => setRemoveOffset((v) => !v)}
+              className="mt-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-ink-dim hover:text-ink"
+            >
+              {active ? 'show absolute' : 'remove static offset'}
+            </button>
+          )}
         </div>
         <div className="flex shrink-0 gap-3">
           {traces.map((t) => (
@@ -132,6 +179,21 @@ export function WaveformCard({
           </div>
         )}
       </div>
+
+      {/* What was subtracted, stated plainly. For acceleration this is the
+          sensor's tilt against gravity: a change here means the mounting moved,
+          which is worth seeing rather than hiding inside a chart transform. */}
+      {active && hasData && (
+        <p className="border-t border-line px-4 py-1.5 text-[10px] text-ink-dim">
+          offset removed —{' '}
+          {traces.map((t, i) => (
+            <span key={t.key}>
+              {i > 0 && ', '}
+              {t.label} {offsets[t.key].toFixed(decimals)} {unit}
+            </span>
+          ))}
+        </p>
+      )}
     </section>
   )
 }
