@@ -296,3 +296,71 @@ Probe transcript:
 Stimulus results:
 Operator:
 ```
+
+## How to check a register yourself
+
+`qv_acq.probe` reads registers straight off the sensor and decodes each word
+every plausible way at once. It is how both register faults on this appliance
+were found, and neither was visible from stored data.
+
+The serial port is exclusive, so stop the acquisition service first.
+
+**One sweep, showing what the profile claims and what it does not:**
+
+```bash
+sudo systemctl stop quakevault-acq
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
+    -m qv_acq.probe --start 0x34 --count 20
+sudo systemctl start quakevault-acq
+```
+
+```
+  0x34      42  accel_x                      0.0205 g      [int16]
+  0x36    1971  accel_z                      0.9624 g      [int16]
+  0x37      13  unmapped   int16=13  uint16=13  /100=0.13  /32768*180=0.07deg  /32768*16=0.006g
+  0x3D       0  unmapped, reads zero
+  0x40    2506  temperature                 25.0600 degC   [int16]
+```
+
+Mapped registers show the engineering value the appliance would record.
+Unmapped ones show every candidate scaling side by side, so a real quantity is
+not dismissed just because nothing claims the address yet. A register that reads
+zero is called out plainly - that is how 0x3D-0x3F were ruled out as the angle
+registers.
+
+**Watch mode is what actually identifies a register.** It re-reads continuously
+and prints only what changed:
+
+```bash
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
+    -m qv_acq.probe --start 0x30 --count 64 --watch
+```
+
+Then move the sensor and read the output:
+
+| do this | and watch |
+|---|---|
+| tilt slowly and hold | registers tracking **orientation** change and stay changed |
+| rotate steadily, then stop | **angular rate** registers change only while moving |
+| tap or shake | **vibration** registers spike and decay back |
+| leave it still | only noise and temperature move |
+
+This distinction is what settled 0x37-0x39: they read 10-15 counts with the unit
+held at a 12 degree tilt. An angle register cannot read 0.08 degrees at 12
+degrees, so they are rate, not angle.
+
+**Useful flags**
+
+| flag | for |
+|---|---|
+| `--start 0x30 --count 64` | which span to read (hex or decimal) |
+| `--watch --interval 0.5` | continuous, printing only changes |
+| `--model ''` | label nothing, when identifying an unknown device |
+| `--slave 0x51 --baud 19200` | a different unit or line rate |
+
+**Pushing a register past 32767 is worth doing deliberately.** Signed and
+unsigned decoding agree below that and disagree above it, so any magnitude
+register that has only ever been read at rest is untested. Shake hard while
+watching, and if a value jumps from about +327 to about -327 between adjacent
+sweeps, that register is unsigned and is being decoded as signed.
+
