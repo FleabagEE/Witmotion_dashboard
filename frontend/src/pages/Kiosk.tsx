@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { subscribeToConnectionState, subscribeToSensor, type LiveFrame } from '../lib/live'
 import { relativeAge } from '../components/ui'
+import { freshness } from '../lib/staleness'
 
 /**
  * Wall display for a control room.
@@ -37,9 +38,6 @@ const TILES: Tile[] = [
   { key: 'tilt', label: 'Tilt from vertical', unit: '°', decimals: 2,
     channels: ['incl_tilt'] },
 ]
-
-/** Beyond this the reading on screen is old enough to mislead. */
-const STALE_AFTER_MS = 15000
 
 export function Kiosk() {
   const [frames, setFrames] = useState<Record<string, { value: number; at: number }>>({})
@@ -106,11 +104,10 @@ export function Kiosk() {
   const active = (alarms.data?.data ?? []).filter((a) => a.state === 'active' && a.level !== 'normal')
   const worst = active.find((a) => a.level === 'critical') ?? active[0]
 
-  const feedAge = Math.max(
-    0,
-    ...Object.values(values).map((v) => (v ? now - v.at : Number.POSITIVE_INFINITY)),
-  )
-  const stale = !Number.isFinite(feedAge) || feedAge > STALE_AFTER_MS
+  // Ages by the stalest tile, and treats a missing one as stale. See
+  // lib/staleness - a frozen screen showing a plausible number is the failure
+  // this exists to prevent.
+  const { ageMs: feedAge, stale } = freshness(Object.values(values), now)
 
   return (
     <div className="flex min-h-screen flex-col bg-bg p-6 text-ink">

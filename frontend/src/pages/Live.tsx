@@ -4,7 +4,7 @@ import { api } from '../lib/api'
 import { WaveformCard, type Trace } from '../components/WaveformCard'
 import { Empty, Pill, relativeAge } from '../components/ui'
 import { subscribeToSensor, subscribeToConnectionState, type LiveFrame } from '../lib/live'
-import type { SeriesPoint } from '../lib/api'
+import { mergeLiveFrames } from '../lib/merge'
 
 /** Axis colours are consistent across every card, so X is always X. */
 const AXIS: Trace[] = [
@@ -173,25 +173,10 @@ export function Live() {
   }, [selected])
 
   // Live frames are only ever appended after the newest stored point, so a
-  // websocket frame can never overwrite or reorder recorded history.
-  const series = useMemo(() => {
-    if (!stored) return undefined
-    if (liveFrames.length === 0) return stored
-
-    const merged: Record<string, SeriesPoint[]> = {}
-    for (const [key, points] of Object.entries(stored)) {
-      const lastStored = points.length ? points[points.length - 1].t : 0
-      const extra: SeriesPoint[] = []
-      for (const frame of liveFrames) {
-        const value = frame.values[key]
-        if (value !== undefined && frame.t > lastStored) {
-          extra.push({ t: frame.t, v: value, lo: value, hi: value })
-        }
-      }
-      merged[key] = extra.length ? [...points, ...extra] : points
-    }
-    return merged
-  }, [stored, liveFrames])
+  // websocket frame can never overwrite or reorder recorded history. Extracted
+  // to lib/merge so it can be tested directly - a duplicated point looks like a
+  // spike, and a spike on a vibration chart looks like an event.
+  const series = useMemo(() => mergeLiveFrames(stored, liveFrames), [stored, liveFrames])
 
   if (sensors.isLoading) return <Empty>Loading…</Empty>
   if (!selected) return <Empty>No sensors registered yet.</Empty>

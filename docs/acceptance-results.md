@@ -81,9 +81,27 @@ assumed.
 
 ## Still outstanding
 
-**There is no frontend test suite.** The dashboard, kiosk display, connection
-badge and axis behaviour are verified by hand only, against 185 backend and 282
-acquisition tests. Anything in `frontend/` can regress silently.
+**Frontend test suite added** - 33 tests under vitest, `npm test` in `frontend/`.
+
+Aimed at the behaviours where bugs actually landed, rather than at coverage:
+
+- the acceleration card is absolute by default, because removing the static
+  offset hides tilt - tilt *is* a change in the static offset;
+- offset removal centres the trace and states what it removed;
+- connection state comes from the socket, not from frames arriving, which is
+  what fixed a badge that claimed "websocket" throughout an outage;
+- a live frame is only appended after the newest stored point, so a reading is
+  never drawn twice - once live and again when its recorded copy lands;
+- kiosk freshness ages by the stalest tile and treats a missing reading as
+  stale, so three frozen tiles cannot hide behind one that still updates.
+
+Two rules were extracted from the pages to be tested directly - `lib/merge.ts`
+and `lib/staleness.ts` - and the pages now call them, so the tests cover the code
+that runs rather than a copy of it.
+
+**Still hand-verified:** the Signal page, routing, the login flow and anything
+visual. ECharts draws to a canvas jsdom does not implement, so chart tests assert
+on the computed option and the surrounding text, not on pixels.
 
 ## What "not tested" means here
 
