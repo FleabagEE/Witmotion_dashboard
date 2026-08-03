@@ -34,7 +34,7 @@ def make_measurement(
         sensor_model="WTVB01-485",
         profile_version="1.0.0",
         slave_id=0x50,
-        group_key="acceleration",
+        group_key="motion",
         sequence=sequence,
         timestamp_utc=utc_now(),
         monotonic_ns=time.monotonic_ns(),
@@ -160,7 +160,7 @@ while True:
     s.append(Measurement(
         appliance_id="QV", run_id="crash-run", adapter_id="A1", bus_id="B1", sensor_id="S1",
         sensor_model="WTVB01-485", profile_version="1.0.0", slave_id=80,
-        group_key="acceleration", sequence=i, timestamp_utc=utc_now(),
+        group_key="motion", sequence=i, timestamp_utc=utc_now(),
         monotonic_ns=time.monotonic_ns(),
         channels={{"accel_z": ChannelValue(value=0.993, unit="g", quality=QualityStatus.GOOD)}},
     ))
@@ -227,7 +227,7 @@ class TestEngineIntegration:
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 20},
+            groups=("motion",), poll_hz={"motion": 20},
         )
 
         with Spool(tmp_path / "spool.db") as spool:

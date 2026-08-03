@@ -112,10 +112,25 @@ class TestProfileStructure:
         mapped = {c.address for c in profile.channels}
         assert mapped.isdisjoint({0x37, 0x38, 0x39})
 
-    def test_summary_group_spans_temp_through_frequency(self, profile) -> None:
-        group = next(g for g in profile.register_groups if g.key == "vibration_summary")
-        assert group.start_address == 0x40
-        assert group.register_count == 7  # 0x40..0x46 inclusive
+    def test_motion_group_is_one_transaction_from_accel_to_frequency(self, profile) -> None:
+        # Acceleration, velocity, displacement, frequency and temperature in a
+        # single read. Split across three, Modbus per-transaction overhead held
+        # velocity and displacement to 4 Hz; merged they all run at ~9 Hz for
+        # less bus time, and share one timestamp instead of three.
+        group = next(g for g in profile.register_groups if g.key == "motion")
+
+        assert group.start_address == 0x34
+        assert group.register_count == 19  # 0x34..0x46 inclusive
+
+    def test_the_motion_span_deliberately_covers_unmapped_registers(self, profile) -> None:
+        # 0x37-0x39 and 0x3D-0x3F fall inside the span and are read and thrown
+        # away. A gap inside one transaction is free; a second transaction to
+        # skip it would not be.
+        group = next(g for g in profile.register_groups if g.key == "motion")
+        addresses = {c.address for c in group.channels}
+
+        assert addresses.isdisjoint({0x37, 0x38, 0x39, 0x3D, 0x3E, 0x3F})
+        assert len(group.channels) == 13
 
     def test_capabilities(self, profile) -> None:
         assert profile.capabilities() == {
@@ -143,20 +158,17 @@ class TestAgainstSimulator:
                 "vib_frequency_x": SignalSpec(waveform="constant", base=61.9),
             },
         )
-        summary = next(g for g in profile.register_groups if g.key == "vibration_summary")
-        velocity = next(g for g in profile.register_groups if g.key == "vibration_velocity")
+        motion = next(g for g in profile.register_groups if g.key == "motion")
 
         with SimulatorServer({0x50: device}) as server:
             with ModbusReader(server.port, baud=115200, timeout=1.0) as reader:
-                summary_reading = reader.read_group(profile, summary, slave_id=0x50)
-                velocity_reading = reader.read_group(profile, velocity, slave_id=0x50)
+                reading = reader.read_group(profile, motion, slave_id=0x50)
 
-        assert summary_reading.quality is Quality.GOOD
-        assert velocity_reading.quality is Quality.GOOD
-        assert summary_reading.channels["temperature"].value == pytest.approx(24.17, abs=0.01)
-        assert summary_reading.channels["vib_displacement_x"].value == pytest.approx(215.0, abs=1)
-        assert summary_reading.channels["vib_frequency_x"].value == pytest.approx(61.9, abs=0.1)
-        assert velocity_reading.channels["vib_velocity_x"].value == pytest.approx(20.10, abs=0.01)
+        assert reading.quality is Quality.GOOD
+        assert reading.channels["temperature"].value == pytest.approx(24.17, abs=0.01)
+        assert reading.channels["vib_displacement_x"].value == pytest.approx(215.0, abs=1)
+        assert reading.channels["vib_frequency_x"].value == pytest.approx(61.9, abs=0.1)
+        assert reading.channels["vib_velocity_x"].value == pytest.approx(20.10, abs=0.01)
 
 
 class TestConditionIndicators:

@@ -33,7 +33,7 @@ def measurement(sequence: int, run_id: str = "run-a") -> Measurement:
     return Measurement(
         appliance_id="QV-EDGE-TEST", run_id=run_id, adapter_id="A1", bus_id="B1",
         sensor_id="SENSOR-001", sensor_model="WTVB01-485", profile_version="1.0.0",
-        slave_id=0x50, group_key="acceleration", sequence=sequence,
+        slave_id=0x50, group_key="motion", sequence=sequence,
         timestamp_utc=utc_now(), monotonic_ns=time.monotonic_ns(),
         channels={"accel_z": ChannelValue(value=0.993, unit="g", quality=QualityStatus.GOOD)},
     )

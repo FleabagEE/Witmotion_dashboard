@@ -26,7 +26,7 @@ def measurement(sensor_id: str = "SENSOR-001", **values: float) -> Measurement:
         sensor_model="WTVB01-485",
         profile_version="1.0.0",
         slave_id=80,
-        group_key="acceleration",
+        group_key="motion",
         sequence=1,
         timestamp_utc=datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc),
         monotonic_ns=0,
@@ -99,7 +99,7 @@ def test_payload_carries_what_a_dashboard_needs() -> None:
     payload = json.loads(publisher._queue.get_nowait())
 
     assert payload["sensor_id"] == "SENSOR-001"
-    assert payload["group"] == "acceleration"
+    assert payload["group"] == "motion"
     assert payload["quality"] == "good"
     # Milliseconds since the epoch, so the browser can measure its own lag
     # against the moment the sensor was actually read.

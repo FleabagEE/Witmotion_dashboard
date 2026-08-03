@@ -52,9 +52,7 @@ buses:
         model: WTVB01-485
         slave_id: 0x50
         groups:
-          - acceleration
-          - vibration_velocity
-          - vibration_summary
+          - motion
           - condition_x
           - condition_y
           - condition_z
@@ -68,9 +66,10 @@ buses:
         # fault words change slowly and are computed on-device anyway, so polling
         # them harder buys nothing but bus time.
         poll_hz:
-          acceleration: 8
-          vibration_velocity: 4
-          vibration_summary: 4
+          # One 19-register read covers acceleration, velocity, displacement,
+          # frequency and temperature, so all of them arrive together at this
+          # rate rather than 8/4/4 across three transactions.
+          motion: 10
           condition_x: 0.33
           condition_y: 0.33
           condition_z: 0.33

@@ -33,16 +33,53 @@ interface CardSpec {
   offsetRemovable?: boolean
 }
 
+/**
+ * Inclination is derived from the gravity vector, not read from a register: this
+ * sensor has none. Each angle gets its own card because their ranges differ -
+ * roll and pitch run +/-180, tilt only 0-180 - and sharing an axis would flatten
+ * whichever is currently small.
+ */
+const ANGLE = '#a371f7'
+
 const CARDS: CardSpec[] = [
-  { title: 'Acceleration', unit: 'g', traces: axisTraces('accel'), decimals: 4, offsetRemovable: true },
-  { title: 'Vibration velocity', unit: 'mm/s', traces: axisTraces('vib_velocity'), decimals: 2 },
-  { title: 'Vibration displacement', unit: 'µm', traces: axisTraces('vib_displacement'), decimals: 0 },
+  {
+    title: 'Acceleration',
+    unit: 'g',
+    traces: axisTraces('accel'),
+    decimals: 4,
+    offsetRemovable: true,
+    note: 'includes gravity',
+  },
+  { title: 'Velocity', unit: 'mm/s', traces: axisTraces('vib_velocity'), decimals: 2 },
+  { title: 'Displacement', unit: 'µm', traces: axisTraces('vib_displacement'), decimals: 0 },
   { title: 'Dominant frequency', unit: 'Hz', traces: axisTraces('vib_frequency'), decimals: 1 },
   {
-    title: 'Chip temperature',
+    title: 'Inclination — roll',
+    unit: '°',
+    traces: [{ key: 'incl_roll', label: 'Roll', colour: ANGLE }],
+    decimals: 2,
+    note: 'about X, derived from gravity',
+  },
+  {
+    title: 'Inclination — pitch',
+    unit: '°',
+    traces: [{ key: 'incl_pitch', label: 'Pitch', colour: ANGLE }],
+    decimals: 2,
+    note: 'about Y, derived from gravity',
+  },
+  {
+    title: 'Tilt from vertical',
+    unit: '°',
+    traces: [{ key: 'incl_tilt', label: 'Tilt', colour: ANGLE }],
+    decimals: 2,
+    note: 'angle between the sensor Z axis and gravity',
+  },
+  {
+    title: 'Sensor internal temperature',
     unit: '°C',
     traces: [{ key: 'temperature', label: 'T', colour: '#f0883e' }],
     decimals: 2,
+    note: 'the sensor die, not ambient air',
   },
 ]
 

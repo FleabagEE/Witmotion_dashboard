@@ -56,62 +56,39 @@ serial:
   supported_bauds: [4800, 9600, 19200, 38400, 57600, 115200, 230400]
 
 register_groups:
-  # Acceleration. Manual 10.4.5: AX = AX[15:0]/32768*16 g.
-  - key: acceleration
-    label: Triaxial acceleration
+  # All motion quantities in ONE transaction: 0x34 to 0x46, 19 registers.
+  #
+  # Split into three groups this cost 36.1 + 36.1 + 44.4 ms per cycle and gave
+  # acceleration 8 Hz while velocity and displacement crawled at 4. Modbus RTU
+  # overhead is per-transaction, not per-register - at 9600 baud a 3-register
+  # read costs 36.1 ms and a 19-register read only 69.4, so 3.7 ms per register
+  # instead of 12.0. Merging buys every channel 10 Hz for 0.752 bus utilisation.
+  #
+  # It also removes an artefact rather than only adding speed: three separate
+  # transactions carried three different timestamps, so acceleration and
+  # velocity of the same instant were recorded milliseconds apart and read as a
+  # skew between cards that was not in the structure. One read, one timestamp.
+  #
+  # The span deliberately covers unmapped registers. 0x37-0x39 are live but
+  # undocumented (angular rate, on the evidence: they read 10-15 counts at a
+  # 12 degree tilt, which no angle register could) and 0x3D-0x3F are constantly
+  # zero. Both are read and discarded - a gap inside a span is free, and a
+  # second transaction to avoid them would not be.
+  - key: motion
+    label: Acceleration, velocity, displacement, frequency and temperature
     function_code: 3
     default_poll_hz: 10
     channels:
       - {key: accel_x, label: Acceleration X, quantity: acceleration, unit: g, address: 0x34, scale: 0.00048828125, minimum: -16, maximum: 16}
       - {key: accel_y, label: Acceleration Y, quantity: acceleration, unit: g, address: 0x35, scale: 0.00048828125, minimum: -16, maximum: 16}
       - {key: accel_z, label: Acceleration Z, quantity: acceleration, unit: g, address: 0x36, scale: 0.00048828125, minimum: -16, maximum: 16}
-
-  # Vibration velocity. Manual 10.4.6: VX (mm/s) = raw/100.
-  #
-  # UNSIGNED. This was wrong until 2026-08-03 and only a hard shake revealed it.
-  # Decoded as int16, a raw word of 33530 became -320.06 mm/s while the sample
-  # before it, raw 31932, read +319.32 - a 640 mm/s discontinuity between two
-  # adjacent readings of a smoothly rising magnitude. Vibration velocity here is
-  # a magnitude and never negative; above 327.67 mm/s a signed read wraps and
-  # inverts it. That is precisely the large-event regime structural monitoring
-  # exists for.
-  #
-  # The maximum is the full representable range, not a device limit. The
-  # previous 120 mm/s was tighter than the hardware actually outputs - readings
-  # above 300 mm/s were observed - and it flagged real event data as
-  # implausible, which the spectrum endpoint then excluded. A plausibility bound
-  # that rejects genuine large events is worse than a loose one.
-  # 0.01 mm/s per count resolves the ISO 10816 zone boundaries (1.12 / 2.8 /
-  # 7.1 mm/s) with room to spare.
-  - key: vibration_velocity
-    label: Triaxial vibration velocity
-    function_code: 3
-    default_poll_hz: 5
-    channels:
       - {key: vib_velocity_x, label: Vibration velocity X, quantity: vibration_velocity, unit: mm/s, address: 0x3A, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
       - {key: vib_velocity_y, label: Vibration velocity Y, quantity: vibration_velocity, unit: mm/s, address: 0x3B, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
       - {key: vib_velocity_z, label: Vibration velocity Z, quantity: vibration_velocity, unit: mm/s, address: 0x3C, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
-
-  # Temperature, displacement and frequency read as one contiguous span:
-  # 0x40 TEMP, 0x41-0x43 DX-DZ, 0x44-0x46 HZX-HZZ. One transaction is cheaper
-  # than three, and the engine tolerates the gap-free layout here.
-  - key: vibration_summary
-    label: Temperature, displacement and dominant frequency
-    function_code: 3
-    default_poll_hz: 5
-    channels:
-      # Manual 10.4.8: Temperature = TEMP[15:0]/100 degC.
       - {key: temperature, label: Chip temperature, quantity: temperature, unit: degC, address: 0x40, scale: 0.01, minimum: -40, maximum: 125}
-      # UNSIGNED, for the same reason as velocity: a displacement magnitude
-      # crossing 32767 um wrapped negative. Observed raw 33324 reading as
-      # -32212 um directly after raw 32707 read +32707.
-      # Manual 10.4.9: DX(um) = raw, no scaling. Note the summary table's
-      # "mm" units column contradicts the detailed section, which states um and
-      # gives a formula with no divisor. The detailed section governs.
       - {key: vib_displacement_x, label: Vibration displacement X, quantity: vibration_displacement, unit: um, address: 0x41, data_type: uint16, scale: 1.0, minimum: 0, maximum: 65535}
       - {key: vib_displacement_y, label: Vibration displacement Y, quantity: vibration_displacement, unit: um, address: 0x42, data_type: uint16, scale: 1.0, minimum: 0, maximum: 65535}
       - {key: vib_displacement_z, label: Vibration displacement Z, quantity: vibration_displacement, unit: um, address: 0x43, data_type: uint16, scale: 1.0, minimum: 0, maximum: 65535}
-      # Manual 10.4.10: HZX (Hz) = raw/10.
       - {key: vib_frequency_x, label: Dominant frequency X, quantity: dominant_frequency, unit: Hz, address: 0x44, data_type: uint16, scale: 0.1, minimum: 0, maximum: 300}
       - {key: vib_frequency_y, label: Dominant frequency Y, quantity: dominant_frequency, unit: Hz, address: 0x45, data_type: uint16, scale: 0.1, minimum: 0, maximum: 300}
       - {key: vib_frequency_z, label: Dominant frequency Z, quantity: dominant_frequency, unit: Hz, address: 0x46, data_type: uint16, scale: 0.1, minimum: 0, maximum: 300}

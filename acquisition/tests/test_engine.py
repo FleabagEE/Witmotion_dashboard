@@ -76,7 +76,7 @@ class TestPortLock:
 
 
 class TestEngine:
-    @pytest.mark.parametrize("group_key", ["acceleration", "vibration_summary"])
+    @pytest.mark.parametrize("group_key", ["motion", "condition_x"])
     def test_polls_and_emits_measurements(self, group_key: str) -> None:
         profile = wtvb()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
@@ -104,7 +104,7 @@ class TestEngine:
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 25},
+            groups=("motion",), poll_hz={"motion": 25},
         )
         with SimulatorServer({0x50: device}) as server:
             seen, _ = asyncio.run(run_engine(server, [binding]))
@@ -117,7 +117,7 @@ class TestEngine:
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 25},
+            groups=("motion",), poll_hz={"motion": 25},
         )
         with SimulatorServer({0x50: device}) as server:
             seen, _ = asyncio.run(run_engine(server, [binding]))
@@ -129,7 +129,7 @@ class TestEngine:
         profile = wtvb()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
-            sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("acceleration",)
+            sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("motion",)
         )
         with SimulatorServer({0x50: device}) as server:
             seen, _ = asyncio.run(run_engine(server, [binding]))
@@ -147,7 +147,7 @@ class TestEngine:
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 30},
+            groups=("motion",), poll_hz={"motion": 30},
         )
         with SimulatorServer({0x50: device}) as server:
             _, engine = asyncio.run(run_engine(server, [binding]))
@@ -162,7 +162,7 @@ class TestEngine:
         profile = wtvb()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
-            sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("acceleration",)
+            sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("motion",)
         )
         with SimulatorServer({0x50: device}) as server:
             _, engine = asyncio.run(run_engine(server, [binding]))
@@ -177,8 +177,8 @@ class TestEngine:
             0x51: SimulatedDevice(profile=profile, slave_id=0x51),
         }
         bindings = [
-            SensorBinding(sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("acceleration",)),
-            SensorBinding(sensor_id="SENSOR-002", profile=profile, slave_id=0x51, groups=("acceleration",)),
+            SensorBinding(sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("motion",)),
+            SensorBinding(sensor_id="SENSOR-002", profile=profile, slave_id=0x51, groups=("motion",)),
         ]
         with SimulatorServer(devices) as server:
             seen, _ = asyncio.run(run_engine(server, bindings))
@@ -191,13 +191,13 @@ class TestEngine:
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration", "condition_x"),
-            poll_hz={"acceleration": 20, "condition_x": 2},
+            groups=("motion", "condition_x"),
+            poll_hz={"motion": 20, "condition_x": 2},
         )
         with SimulatorServer({0x50: device}) as server:
             seen, _ = asyncio.run(run_engine(server, [binding], duration=1.5))
 
-        fast = sum(1 for m in seen if m.group_key == "acceleration")
+        fast = sum(1 for m in seen if m.group_key == "motion")
         slow = sum(1 for m in seen if m.group_key == "condition_x")
         assert fast > slow * 2, f"expected fast group to dominate, got {fast} vs {slow}"
 
@@ -205,7 +205,7 @@ class TestEngine:
         profile = wtvb()
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
-            sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("acceleration",)
+            sensor_id="SENSOR-001", profile=profile, slave_id=0x50, groups=("motion",)
         )
         with SimulatorServer({0x50: device}) as server:
             seen, _ = asyncio.run(run_engine(server, [binding], simulated=True))
@@ -223,7 +223,7 @@ class TestResilience:
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 20},
+            groups=("motion",), poll_hz={"motion": 20},
         )
         faults = FaultInjection(drop_probability=1.0)
 
@@ -248,7 +248,7 @@ class TestResilience:
         device = SimulatedDevice(profile=profile, slave_id=0x50)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 50},
+            groups=("motion",), poll_hz={"motion": 50},
         )
         faults = FaultInjection(drop_probability=1.0)
 
@@ -271,7 +271,7 @@ class TestResilience:
         faults = FaultInjection(drop_probability=1.0)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 20},
+            groups=("motion",), poll_hz={"motion": 20},
         )
 
         async def scenario(server):
@@ -304,7 +304,7 @@ class TestResilience:
         faults = FaultInjection(drop_probability=0.3, crc_error_probability=0.2)
         binding = SensorBinding(
             sensor_id="SENSOR-001", profile=profile, slave_id=0x50,
-            groups=("acceleration",), poll_hz={"acceleration": 20},
+            groups=("motion",), poll_hz={"motion": 20},
         )
         with SimulatorServer({0x50: device}, faults=faults, seed=7) as server:
             seen, engine = asyncio.run(

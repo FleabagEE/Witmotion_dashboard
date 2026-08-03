@@ -36,8 +36,8 @@ def config_dict(port: str, tmp_path: Path, **overrides) -> dict:
                         "sensor_id": "SENSOR-001",
                         "model": "WTVB01-485",
                         "slave_id": 0x50,
-                        "groups": ["acceleration"],
-                        "poll_hz": {"acceleration": 20},
+                        "groups": ["motion"],
+                        "poll_hz": {"motion": 20},
                     }
                 ],
             }
@@ -95,7 +95,7 @@ class TestConfig:
 
     def test_negative_poll_rate_is_rejected(self, tmp_path: Path) -> None:
         raw = config_dict("/dev/null", tmp_path)
-        raw["buses"][0]["sensors"][0]["poll_hz"] = {"acceleration": -1}
+        raw["buses"][0]["sensors"][0]["poll_hz"] = {"motion": -1}
         with pytest.raises(ValueError, match="must be positive"):
             ApplianceConfig.model_validate(raw)
 
@@ -147,7 +147,7 @@ class TestMetrics:
                     "bus_utilisation": 0.25,
                     "tasks": [
                         {
-                            "sensor_id": "S1", "group": "acceleration",
+                            "sensor_id": "S1", "group": "motion",
                             "configured_hz": 5.0, "measured_hz": 4.9, "jitter_ms": 2.0,
                             "mean_latency_ms": 30.0, "polls_ok": 10, "polls_failed": 1,
                             "missed_polls": 0, "retries": 2, "breaker": "closed",

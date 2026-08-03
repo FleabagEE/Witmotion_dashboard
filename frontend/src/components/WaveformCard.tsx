@@ -43,12 +43,17 @@ export function WaveformCard({
    * vibration is under 0.01 g, so the signal ends up occupying about one
    * percent of the plot height and tapping the structure appears to do nothing.
    *
-   * Removing it is what a vibration instrument does; the offset itself is
-   * still reported below the chart so nothing is silently discarded.
+   * Off by default, though. Tilting the sensor IS a change in the static
+   * offset, so removing it hides exactly what a tilt test is looking for - and
+   * the absolute value in g is what an operator reads first. The vibration view
+   * is one click away, and orientation now has its own cards in degrees.
+   *
+   * The offset itself is reported below the chart, so nothing is discarded
+   * silently either way.
    */
   offsetRemovable?: boolean
 }) {
-  const [removeOffset, setRemoveOffset] = useState(offsetRemovable)
+  const [removeOffset, setRemoveOffset] = useState(false)
   const latest = useMemo(() => {
     const out: Record<string, number | null> = {}
     traces.forEach((t) => {

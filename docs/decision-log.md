@@ -555,3 +555,67 @@ minute. Both correctly refused.
 transient when a spectrum would have been informative. Refusing to answer is the
 right failure here: the alternative is a number that looks like a resonance and
 is an artefact of the window.
+
+## ADR-023: One transaction for all motion channels
+
+**Status.** Accepted.
+
+**Context.** Velocity and displacement updated visibly slower than acceleration.
+They were polled at 4 Hz against acceleration's 8, and raising them was not
+possible: the bus already sat at 0.669 utilisation and every increase modelled
+above 1.0.
+
+The reason is that Modbus RTU overhead is per *transaction*, not per register. At
+9600 baud a 3-register read costs 36.1 ms, of which roughly 20 ms is request
+frame, interframe idle, device turnaround and USB latency. A 19-register read
+costs 69.4 ms. That is 12.0 ms per register against 3.7.
+
+**Decision.** Acceleration (0x34-0x36), velocity (0x3A-0x3C) and the temperature/
+displacement/frequency block (0x40-0x46) are read as one 19-register transaction,
+`motion`.
+
+**Result.** Every channel now polls at ~9 Hz measured, against 8/4/4 before, and
+bus utilisation *fell* from 0.669 to 0.646. Velocity and displacement more than
+doubled their rate while using less of the bus.
+
+It also removed an artefact rather than only adding speed. Three transactions
+carried three timestamps, so acceleration and velocity of the same instant were
+recorded milliseconds apart and drew a skew between cards that was not in the
+structure. One read, one timestamp.
+
+**The span deliberately covers unmapped registers.** 0x37-0x39 and 0x3D-0x3F fall
+inside it and are read and discarded. A gap within a transaction is free; a
+second transaction to avoid it is not.
+
+## ADR-024: Inclination is derived, and says when it is meaningless
+
+**Status.** Accepted.
+
+**Context.** Rotational measurement was wanted in degrees. The WTVB01-485 has no
+angle register. 0x3D-0x3F are permanently zero, and 0x37-0x39 - the only other
+candidate - read 10-15 counts with the unit held at a 12 degree tilt, which no
+angle register could. They are angular rate.
+
+**Decision.** Roll, pitch and total tilt are computed from the acceleration
+vector. A stationary accelerometer measures nothing but gravity, so the direction
+of that vector gives orientation exactly; this is what an inclinometer is. The
+derivation uses the one register block independently confirmed on this unit, the
+three axes summing to 0.993 g at rest.
+
+**Yaw is not reported.** Rotation about the gravity vector does not change the
+gravity vector, so it is not observable from an accelerometer at all. It needs a
+magnetometer, or a gyro integrated from a known starting attitude, and this
+device documents neither. A yaw trace here would be fabrication.
+
+**The derivation reports its own validity.** It is exact only while the sensor is
+stationary: any real acceleration adds to gravity and the angle stops describing
+orientation. A single accelerometer cannot distinguish tilting from accelerating,
+so the ambiguity cannot be filtered away. Instead the vector magnitude is checked
+against gravity, and anything outside 0.85-1.15 g is flagged implausible - the
+numbers are still returned, because the motion is real, but nothing may read them
+as orientation. Below 0.1 g no angle is emitted at all.
+
+**Consequence for the acceleration card.** Removing the static offset, added in
+ADR-020 so vibration was visible against gravity, hides tilt exactly - tilt *is* a
+change in the static offset. With orientation now on its own cards in degrees,
+the acceleration card defaults to absolute again and offset removal is one click.

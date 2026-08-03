@@ -165,18 +165,18 @@ class TestEndToEnd:
     def test_reads_vibration_from_simulated_wtvb01(self) -> None:
         profile = loader.get("WTVB01-485")
         device = SimulatedDevice(profile=profile, slave_id=0x51)
-        summary = next(g for g in profile.register_groups if g.key == "vibration_summary")
-        velocity = next(g for g in profile.register_groups if g.key == "vibration_velocity")
+        motion = next(g for g in profile.register_groups if g.key == "motion")
 
         with SimulatorServer({0x51: device}) as server:
             with ModbusReader(server.port, baud=115200, timeout=1.0) as reader:
-                summary_reading = reader.read_group(profile, summary, slave_id=0x51)
-                velocity_reading = reader.read_group(profile, velocity, slave_id=0x51)
+                reading = reader.read_group(profile, motion, slave_id=0x51)
 
-        assert summary_reading.ok and velocity_reading.ok
-        assert summary_reading.channels["temperature"].value == pytest.approx(24.0, abs=1.0)
-        assert velocity_reading.channels["vib_velocity_x"].value > 0
-        assert velocity_reading.channels["vib_velocity_x"].unit == "mm/s"
+        # One transaction now carries all of it, which is the point of the merge.
+        assert reading.ok
+        assert reading.channels["temperature"].value == pytest.approx(24.0, abs=1.0)
+        assert reading.channels["vib_velocity_x"].value > 0
+        assert reading.channels["vib_velocity_x"].unit == "mm/s"
+        assert reading.channels["accel_z"].unit == "g"
 
     def test_two_sensor_models_share_one_bus(self) -> None:
         vibration = loader.get("WTVB01-485")
@@ -195,7 +195,7 @@ class TestEndToEnd:
                 )
                 vibration_reading = reader.read_group(
                     vibration,
-                    next(g for g in vibration.register_groups if g.key == "vibration_summary"),
+                    next(g for g in vibration.register_groups if g.key == "motion"),
                     slave_id=0x51,
                 )
 

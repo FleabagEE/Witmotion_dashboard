@@ -243,8 +243,12 @@ class ReadController extends Controller
         // Raised to 16 so a whole dashboard fits in one request: splitting it
         // let each half land at a different moment, which on a chart reads as a
         // skew between cards that is not in the data.
-        if (count($channels) > 16) {
-            return response()->json(['message' => 'at most 16 channels per request'], 422);
+        // 20, not 16: the live page now asks for 13 measured channels plus three
+        // derived inclination angles. The cap exists to bound one request's cost,
+        // not to ration the dashboard, and every channel here is one column of
+        // the same time-bucketed scan.
+        if (count($channels) > 20) {
+            return response()->json(['message' => 'at most 20 channels per request'], 422);
         }
 
         $seconds = $data['seconds'] ?? 300;

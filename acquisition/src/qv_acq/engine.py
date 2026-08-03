@@ -25,10 +25,11 @@ import uuid
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Awaitable, Callable, Iterable
 
+from .derive import derive_for_group
 from .client import ModbusReader, Quality
 from .measurement import ChannelValue, Measurement, QualityStatus, ValueClass, utc_now
 from .portlock import PortLock
@@ -312,7 +313,7 @@ class BusWorker:
             sequence=task.sequence,
             timestamp_utc=utc_now(),
             monotonic_ns=time.monotonic_ns(),
-            channels={
+            channels=self._with_derived(task.group.key, {
                 key: ChannelValue(
                     value=channel.value,
                     unit=channel.unit,
@@ -321,13 +322,41 @@ class BusWorker:
                     raw=tuple(channel.raw),
                 )
                 for key, channel in reading.channels.items()
-            },
+            }),
             status=status,
             crc_valid=reading.ok,
             latency_ms=reading.latency_ms,
             error=reading.error,
             simulated=self.simulated,
         )
+
+    def _with_derived(
+        self, group_key: str, channels: dict[str, ChannelValue]
+    ) -> dict[str, ChannelValue]:
+        """Attach derived channels, never at the cost of the measured ones.
+
+        A derivation is arithmetic on values that are already recorded, so a
+        fault in it must not be able to lose a reading that was read correctly
+        from the bus.
+        """
+        try:
+            derived = derive_for_group(group_key, channels)
+        except Exception:  # noqa: BLE001
+            log.exception("derivation failed for group %s; measured channels kept", group_key)
+            return channels
+
+        # A value derived from simulated inputs is simulated, whatever the
+        # arithmetic. Letting it keep the DERIVED class would put a number on the
+        # wire that nothing downstream could tell apart from a real measurement,
+        # which is the one thing the value class exists to prevent.
+        if self.simulated:
+            derived = {
+                key: replace(channel, value_class=ValueClass.SIMULATED)
+                for key, channel in derived.items()
+            }
+
+        channels.update(derived)
+        return channels
 
     async def run(self, stop: asyncio.Event) -> None:
         loop = asyncio.get_running_loop()
