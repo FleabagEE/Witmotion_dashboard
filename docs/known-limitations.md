@@ -241,3 +241,41 @@ attempts in 300 s.
 **Not addressed.** The unit assumes an X session on `:0` with a logged-in seat.
 A headless appliance needs a display manager configured for autologin first; that
 is site setup and is not scripted here.
+
+## The displacement range mode is invisible to the appliance
+
+The WTVB01-485 has two displacement range settings, chosen in the vendor Windows
+software: **60000 um at 1 um resolution** and **600 um at 0.01 um**. Switching
+between them changes what a count in 0x41-0x43 is worth by a factor of a hundred,
+and nothing in the Modbus data announces it. Reading the configuration block
+0x00-0x2F before and after a switch showed no register change, so the setting is
+either written elsewhere or not read back at all.
+
+An appliance still scaling counts as micrometres after a switch to the fine mode
+would over-report displacement a hundredfold - and the readings would look
+entirely plausible. Two orders of magnitude is the difference between cosmetic
+and structural on any guideline table.
+
+**Detected rather than trusted.** For sinusoidal motion `v = 2*pi*f*A`, so the
+device's three vibration outputs are not independent, and a hundredfold error in
+displacement shows up as a hundredfold error in the implied frequency - which the
+device reports separately. That makes the mismatch visible without knowing which
+register holds the mode:
+
+```bash
+php artisan measurements:check-units
+```
+
+Confirmed against live data on 2026-08-03: implied 1.6 Hz against a measured
+1.5 Hz, ratio 0.84. The profile's scale of 1 um per count is correct for the
+60000 um mode.
+
+Run it after any change to the sensor's configuration, and after a sensor is
+replaced. It needs some excitation in the window - tap the sensor first - and
+says so rather than inventing a verdict when the structure is still.
+
+**Which mode to choose.** The fine mode resolves 0.01 um, a hundred times better,
+and structural vibration displacement is usually microns to tens of microns.
+But a hand tap on this bench produced excursions well past 600 um, which would
+clip. Fine mode suits a mounted sensor on a real structure; coarse mode suits
+bench testing where the sensor gets handled.
