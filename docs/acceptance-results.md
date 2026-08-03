@@ -52,11 +52,34 @@ default: they are evidence with their own retention, not what rebuilds an
 appliance, and including them made the backup slow enough that nobody would run
 it - which is the most common way a backup fails.
 
-## Still outstanding
+## Upgrade and rollback
 
-**Upgrade and rollback is not implemented.** It is the one item of Phase 6 not
-started. Nothing here tests that a version can be replaced and reverted with the
-database and configuration intact.
+Verified on 2026-08-03 by upgrading across a commit carrying a real migration and
+then rolling back. `deploy/upgrade.sh`.
+
+| step | result |
+|---|---|
+| Pre-flight refuses an unhealthy appliance | yes |
+| Backup taken before any change | yes |
+| Migration applied on upgrade | yes |
+| Post-flight health check | passed |
+| Rollback reverted the commit | yes, to 89a0c8b |
+| Rollback dropped the migration's table | yes |
+| Migration count restored | 20 -> 21 -> 20 |
+| **Acquisition kept running throughout** | **yes - 23 056 measurements across the upgrade, 22 760 across the rollback** |
+
+That last row is the design working. The spool covers 10.1 hours, so an upgrade
+is a planned outage of exactly the things it exists to survive; the database, the
+API and the dashboard all restart while readings keep being taken.
+
+**The first attempt could not roll back at all.** State was kept under
+`/var/lib/quakevault-acq`, which systemd creates 0700 for the service user, and
+the script wrote it with `sudo` while testing for it without. It created a
+rollback point it could not find - the upgrade reported success and left no way
+back. Invisible until somebody needed it, which is why it was tested rather than
+assumed.
+
+## Still outstanding
 
 **There is no frontend test suite.** The dashboard, kiosk display, connection
 badge and axis behaviour are verified by hand only, against 185 backend and 282
