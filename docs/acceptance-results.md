@@ -38,6 +38,30 @@ Reproduce with `acceptance/fault-injection.sh` and
 
 **14 passed, 1 partial, 4 not tested, 1 running.**
 
+## Backup and restore
+
+Verified end to end on 2026-08-03: checksums check, 28 tables restore into a
+scratch database, alarm definitions survive with their confirmation state, and
+the scratch database is dropped afterwards. `acceptance/backup-restore.sh`.
+
+It did not work when first written - it could not complete at all. Timing each
+step rather than guessing found the spool copy taking over eight minutes for a
+1.2 GB file whose contents were almost entirely already in the database dump. It
+now exports only undelivered spool rows, and excludes raw measurements by
+default: they are evidence with their own retention, not what rebuilds an
+appliance, and including them made the backup slow enough that nobody would run
+it - which is the most common way a backup fails.
+
+## Still outstanding
+
+**Upgrade and rollback is not implemented.** It is the one item of Phase 6 not
+started. Nothing here tests that a version can be replaced and reverted with the
+database and configuration intact.
+
+**There is no frontend test suite.** The dashboard, kiosk display, connection
+badge and axis behaviour are verified by hand only, against 185 backend and 282
+acquisition tests. Anything in `frontend/` can regress silently.
+
 ## What "not tested" means here
 
 Cases 2, 3, 4 and 5 need hardware that is not on the bench. Case 2 needs an
