@@ -135,3 +135,26 @@ reliability. The troubleshooting guide leads with wiring, not configuration.
 - CH340 devices expose no USB serial number, so `/dev/serial/by-id/` names
   collide when two are present. Stable identity therefore keys on physical USB
   topology via udev, not the by-id symlink alone.
+
+## Condition indicators are unverified in the large-amplitude regime
+
+The 36 per-axis condition indicators (0x47-0x6A) are decoded as signed 16-bit,
+which is the schema default rather than a decision anyone made about them.
+
+Some of them must be signed: skewness is negative for a left-tailed
+distribution. Others cannot be: RMS, absolute average and variance have no
+meaningful negative value. They are almost certainly a mix, and they are
+currently all one type.
+
+This is the same latent fault that was found in vibration velocity and
+displacement on 2026-08-03 (ADR-021), and it is invisible for the same reason -
+on a bench these registers sit near zero, nowhere near the 32767-count boundary
+where signed and unsigned diverge. A stationary test cannot distinguish them.
+
+Resolving it needs either a manufacturer statement of the type per register, or
+a controlled excitation large enough to drive each indicator past 32767 counts
+while the raw words are captured. Until then, treat any condition indicator
+reading above roughly 32 units (raw 32000, scale 0.001) as unverified.
+
+Nothing alarms on these channels, so the exposure is analytical rather than
+operational.
