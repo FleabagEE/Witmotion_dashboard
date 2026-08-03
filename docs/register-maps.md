@@ -364,3 +364,58 @@ register that has only ever been read at rest is untested. Shake hard while
 watching, and if a value jumps from about +327 to about -327 between adjacent
 sweeps, that register is unsigned and is being decoded as signed.
 
+
+## Calibrating the accelerometer
+
+This unit reads gravity as 0.9898 g with the vector on X and 0.9625 g with it on
+Z. That difference is the point: a wrong scale factor would read uniformly low at
+every orientation, so an orientation-dependent error is the sensor's own per-axis
+gain, not a decoding fault. Around 3% is ordinary for an uncalibrated consumer
+MEMS part.
+
+It matters mainly because inclination is derived from the *direction* of that
+vector, where 3% on one axis is worth roughly two degrees near 45.
+
+Six positions, each axis up and down. Stop the acquisition service first.
+
+```bash
+sudo systemctl stop quakevault-acq
+```
+
+For each of `z-up z-down x-up x-down y-up y-down`, rest the sensor on that face,
+let it settle, then:
+
+```bash
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
+    -m qv_acq.calibrate_cli capture --label z-up
+```
+
+Each capture averages five seconds and **refuses itself** if the readings vary by
+more than 0.01 g, because a position captured while the sensor was still moving
+corrupts the fit invisibly - the averages look reasonable and the gains come out
+wrong. Captures accumulate in a file, so they can be taken minutes apart and any
+one of them re-taken without starting over.
+
+Then fit:
+
+```bash
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
+    -m qv_acq.calibrate_cli solve
+```
+
+It reports axis coverage first and **refuses to fit below 0.8**. Six captures all
+taken roughly flat constrain the Z axis and say nothing about X or Y, and the
+solver would still return confident-looking numbers - that failure is worse than
+no calibration, because it looks like one.
+
+Nothing is applied until the result is installed:
+
+```bash
+sudo install -m 0644 /tmp/quakevault-calibration.yaml /etc/quakevault/calibration.yaml
+sudo systemctl restart quakevault-acq
+```
+
+With no file present every gain is 1.0 and readings pass through untouched. Once
+applied, corrected acceleration is recorded as `processed` rather than `native`,
+so the stored record distinguishes what the sensor said from what the appliance
+concluded. The raw register words are kept either way.

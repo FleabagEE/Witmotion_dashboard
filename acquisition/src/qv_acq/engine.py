@@ -29,6 +29,7 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Awaitable, Callable, Iterable
 
+from .calibration import SensorCalibration, IDENTITY
 from .derive import derive_for_group
 from .client import ModbusReader, Quality
 from .measurement import ChannelValue, Measurement, QualityStatus, ValueClass, utc_now
@@ -81,6 +82,9 @@ class SensorBinding:
     slave_id: int | None = None
     groups: tuple[str, ...] | None = None
     poll_hz: dict[str, float] = field(default_factory=dict)
+    #: Per-unit accelerometer correction. Identity unless one was fitted, so an
+    #: appliance never applies a correction nobody chose.
+    calibration: SensorCalibration = IDENTITY
 
     def resolved_slave_id(self) -> int:
         return self.slave_id if self.slave_id is not None else self.profile.serial.default_slave_id
@@ -322,7 +326,7 @@ class BusWorker:
                     raw=tuple(channel.raw),
                 )
                 for key, channel in reading.channels.items()
-            }),
+            }, task.binding.calibration),
             status=status,
             crc_valid=reading.ok,
             latency_ms=reading.latency_ms,
@@ -331,7 +335,10 @@ class BusWorker:
         )
 
     def _with_derived(
-        self, group_key: str, channels: dict[str, ChannelValue]
+        self,
+        group_key: str,
+        channels: dict[str, ChannelValue],
+        calibration: SensorCalibration = IDENTITY,
     ) -> dict[str, ChannelValue]:
         """Attach derived channels, never at the cost of the measured ones.
 
@@ -339,6 +346,11 @@ class BusWorker:
         fault in it must not be able to lose a reading that was read correctly
         from the bus.
         """
+        # Calibration first, so inclination is derived from corrected axes. A
+        # 3% per-axis gain error is worth about two degrees of tilt near 45,
+        # which would otherwise be baked into every angle.
+        channels = calibration.apply(channels)
+
         try:
             derived = derive_for_group(group_key, channels)
         except Exception:  # noqa: BLE001
