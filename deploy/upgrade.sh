@@ -123,10 +123,14 @@ do_rollback() {
 
 rebuild() {
     info "installing backend dependencies"
-    # --no-dev is right for an appliance and wrong for the bench, where it would
-    # remove phpunit and take the test suite with it. Overridable rather than
-    # assumed.
-    run bash -c "cd $REPO/backend && composer install --no-interaction ${COMPOSER_ARGS:---no-dev --optimize-autoloader} --quiet" \
+    # --no-dev is right for an appliance and wrong for the bench, where it
+    # removes phpunit and takes the test suite with it.
+    #
+    # ${VAR-default}, not ${VAR:-default}. The colon form substitutes the default
+    # when the variable is empty as well as unset, so COMPOSER_ARGS="" - the
+    # obvious way to ask for "no extra flags" - was silently ignored and --no-dev
+    # ran anyway. It did exactly that on this machine and removed the test suite.
+    run bash -c "cd $REPO/backend && composer install --no-interaction ${COMPOSER_ARGS---no-dev --optimize-autoloader} --quiet" \
         || info "composer install reported a problem (continuing to the health check)"
     info "installing the acquisition package"
     run bash -c "$REPO/.venv/bin/pip -q install -e $REPO/acquisition"
