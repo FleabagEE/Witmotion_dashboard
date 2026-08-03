@@ -313,4 +313,28 @@ class IngestApiTest extends TestCase
         );
         $this->assertSame(1, (int) $isHypertable->n);
     }
+
+    public function test_sub_second_timestamps_survive_ingestion(): void
+    {
+        $this->authenticate();
+
+        // The query grammar's date format is 'Y-m-d H:i:s', so binding a Carbon
+        // straight into the insert drops microseconds even though the column is
+        // timestamptz(6). That silently collapsed the eight readings a second
+        // this appliance takes onto a single timestamp, which capped spectral
+        // analysis of the stored record at 0.4 Hz when the sampling supports
+        // 3.2 Hz. The data looked complete the whole time - only the timing
+        // was gone.
+        $this->postJson('/api/internal/v1/ingest/batch', [
+            'measurements' => [
+                $this->envelope(1, ['timestamp_utc' => '2026-07-31T12:00:00.111111Z']),
+                $this->envelope(2, ['timestamp_utc' => '2026-07-31T12:00:00.222222Z']),
+                $this->envelope(3, ['timestamp_utc' => '2026-07-31T12:00:00.333333Z']),
+            ],
+        ])->assertStatus(202);
+
+        $distinct = DB::table('measurements')->distinct()->count('time');
+
+        $this->assertSame(3, $distinct, 'sub-second timestamps were collapsed onto one second');
+    }
 }

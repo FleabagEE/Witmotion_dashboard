@@ -70,7 +70,8 @@ class IngestService
                     'sensor_id' => $envelope['sensor_id'],
                     'group_key' => $envelope['group'],
                     'sequence' => $envelope['sequence'],
-                    'measured_at' => Carbon::parse($envelope['timestamp_utc']),
+                    // Microseconds preserved for the same reason as measurements.time.
+                    'measured_at' => Carbon::parse($envelope['timestamp_utc'])->format('Y-m-d H:i:s.uP'),
                     'quality' => data_get($envelope, 'quality.status', 'good'),
                     'latency_ms' => data_get($envelope, 'quality.latency_ms'),
                     'channel_count' => count($envelope['measurements']),
@@ -91,7 +92,16 @@ class IngestService
                 foreach ($envelope['measurements'] as $channelKey => $reading) {
                     $channel = $this->resolveChannel($sensor, $envelope['group'], $channelKey, $reading);
                     $rows[] = [
-                        'time' => Carbon::parse($envelope['timestamp_utc']),
+                        // Formatted explicitly, with microseconds.
+                        //
+                        // Binding the Carbon instance directly loses them: the
+                        // query grammar's date format is 'Y-m-d H:i:s', so
+                        // 15:57:45.444103 reaches Postgres as 15:57:45 even
+                        // though the column is timestamptz(6). That collapsed
+                        // eight readings a second onto one timestamp and capped
+                        // any spectral analysis of the stored record at 0.4 Hz,
+                        // when the sampling supports 3.2 Hz.
+                        'time' => Carbon::parse($envelope['timestamp_utc'])->format('Y-m-d H:i:s.uP'),
                         'appliance_id' => $envelope['appliance_id'],
                         'sensor_id' => $envelope['sensor_id'],
                         'channel_key' => $channelKey,

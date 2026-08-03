@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AlarmActionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\IngestController;
 use App\Http\Controllers\Api\ReadController;
+use App\Http\Controllers\Api\SpectrumController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -38,6 +39,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/sensors/{sensorId}/latest', [ReadController::class, 'latest'])->name('sensors.latest');
         Route::get('/series', [ReadController::class, 'series'])->name('series');
         Route::get('/series/multi', [ReadController::class, 'multiSeries'])->name('series.multi');
+        Route::get('/spectrum', SpectrumController::class)->name('spectrum');
         Route::get('/alarms', [ReadController::class, 'alarms'])->name('alarms.index');
     });
 
