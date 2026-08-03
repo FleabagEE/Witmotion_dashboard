@@ -103,14 +103,33 @@ class TestProfileStructure:
         mapped = {c.address for c in profile.channels}
         assert mapped.isdisjoint({0x3D, 0x3E, 0x3F})
 
-    def test_undocumented_registers_are_not_mapped(self, profile) -> None:
-        """0x37-0x39 are live on the unit but absent from the register table.
+    def test_the_acceleration_amplitude_registers_are_mapped(self, profile) -> None:
+        # 0x37-0x39 were left unmapped on the guess that they were angular rate.
+        # The vendor software identifies them as acceleration amplitude, and they
+        # change 5-6.5 times a second while 0x34-0x36 sit static. They are the
+        # only channel here that shows vibration in acceleration units.
+        mapped = {c.address: c for c in profile.channels}
 
-        Excluded on purpose: an undocumented register may move or vanish in a
-        firmware revision, so it must never back a measurement channel.
-        """
-        mapped = {c.address for c in profile.channels}
-        assert mapped.isdisjoint({0x37, 0x38, 0x39})
+        for address, key in ((0x37, "accel_amplitude_x"),
+                             (0x38, "accel_amplitude_y"),
+                             (0x39, "accel_amplitude_z")):
+            assert mapped[address].key == key
+            assert mapped[address].unit == "g"
+            # A magnitude. Signed decoding only diverges above 16 g, which is
+            # the lesson velocity taught at 327 mm/s.
+            assert mapped[address].data_type == "uint16"
+
+    def test_amplitude_shares_the_acceleration_scaling(self, profile) -> None:
+        # Both are accelerations, so raw/32768*16 applies to both. That scaling
+        # is what reproduced the vendor's 0.0068 g at rest from raw 14.
+        mapped = {c.address: c for c in profile.channels}
+
+        assert mapped[0x37].scale == mapped[0x34].scale
+
+    def test_registers_that_read_only_zero_stay_unmapped(self, profile) -> None:
+        # 0x3D-0x3F are inside the motion span and constantly zero. Unlike
+        # 0x37-0x39 there is no evidence they carry anything.
+        assert {c.address for c in profile.channels}.isdisjoint({0x3D, 0x3E, 0x3F})
 
     def test_motion_group_is_one_transaction_from_accel_to_frequency(self, profile) -> None:
         # Acceleration, velocity, displacement, frequency and temperature in a
@@ -129,12 +148,13 @@ class TestProfileStructure:
         group = next(g for g in profile.register_groups if g.key == "motion")
         addresses = {c.address for c in group.channels}
 
-        assert addresses.isdisjoint({0x37, 0x38, 0x39, 0x3D, 0x3E, 0x3F})
-        assert len(group.channels) == 13
+        assert addresses.isdisjoint({0x3D, 0x3E, 0x3F})
+        assert len(group.channels) == 16
 
     def test_capabilities(self, profile) -> None:
         assert profile.capabilities() == {
             "acceleration",
+            "acceleration_amplitude",
             "vibration_velocity",
             "vibration_displacement",
             "dominant_frequency",

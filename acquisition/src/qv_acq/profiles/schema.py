@@ -15,6 +15,7 @@ from ..decode import WORD_COUNT
 VerificationStatus = Literal["verified", "candidate", "unverified"]
 Quantity = Literal[
     "acceleration",
+    "acceleration_amplitude",
     "angular_velocity",
     "magnetic_field",
     "attitude_angle",

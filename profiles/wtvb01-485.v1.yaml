@@ -43,11 +43,17 @@ verification_notes: >-
   cannot be. They sit near zero on this bench and so carry the same latent risk
   velocity did. Treat as unverified in the large-amplitude regime.
 
-  Registers 0x37-0x39 are live on this unit and respond to excitation, but they
-  do NOT appear in the manufacturer's register table at all - it jumps from 0x36
-  to 0x3A. They are almost certainly the underlying IMU's angular-velocity
-  registers, exposed but unsupported. They are deliberately NOT included here: an
-  undocumented register may move or disappear in a firmware revision.
+  CORRECTION 2026-08-03. Registers 0x37-0x39 were left unmapped on the guess
+  that they were the IMU's angular-rate outputs. They are not. The vendor
+  Windows software identifies them as X/Y/Z ACCELERATION AMPLITUDE: it lists
+  that quantity between Acceleration and velocity amplitude in its own column
+  order, which is precisely this gap, and plots it on a chart that responds to
+  every tap while its "Acceleration" chart stays flat.
+
+  They remain undocumented by the manufacturer, so the firmware-revision risk
+  stands. But leaving them out cost more than it saved: they are the only
+  channel on this device that shows vibration in acceleration units, and their
+  absence is why tapping the sensor appeared to do nothing.
 
 serial:
   baud: 9600
@@ -69,11 +75,10 @@ register_groups:
   # velocity of the same instant were recorded milliseconds apart and read as a
   # skew between cards that was not in the structure. One read, one timestamp.
   #
-  # The span deliberately covers unmapped registers. 0x37-0x39 are live but
-  # undocumented (angular rate, on the evidence: they read 10-15 counts at a
-  # 12 degree tilt, which no angle register could) and 0x3D-0x3F are constantly
-  # zero. Both are read and discarded - a gap inside a span is free, and a
-  # second transaction to avoid them would not be.
+  # 0x3D-0x3F fall inside the span, read constantly zero, and are discarded. A
+  # gap inside a transaction is free; a second transaction to avoid it is not.
+  # 0x37-0x39 were in that category until they were identified as acceleration
+  # amplitude - they were being read all along and thrown away.
   - key: motion
     label: Acceleration, velocity, displacement, frequency and temperature
     function_code: 3
@@ -82,6 +87,30 @@ register_groups:
       - {key: accel_x, label: Acceleration X, quantity: acceleration, unit: g, address: 0x34, scale: 0.00048828125, minimum: -16, maximum: 16}
       - {key: accel_y, label: Acceleration Y, quantity: acceleration, unit: g, address: 0x35, scale: 0.00048828125, minimum: -16, maximum: 16}
       - {key: accel_z, label: Acceleration Z, quantity: acceleration, unit: g, address: 0x36, scale: 0.00048828125, minimum: -16, maximum: 16}
+
+      # Acceleration amplitude - the vibration component, 0x37-0x39.
+      #
+      # Undocumented: the manufacturer's table jumps 0x36 to 0x3A. Identified on
+      # 2026-08-03 from the vendor Windows software, which lists "X/Y/Z
+      # acceleration amplitude" between Acceleration and velocity amplitude in
+      # its own column order - exactly this gap - and plots them on a separate,
+      # lively chart while its "Acceleration" chart sits flat.
+      #
+      # Confirmed three ways rather than assumed. They change 5-6.5 times a
+      # second with 10-15 distinct values while 0x34-0x36 are static; the vendor
+      # showed X 0.0068 and Y 0.0068 g at rest against 0.0063 and 0.0068 here;
+      # and the scaling that produces that match is raw/32768*16, the same as
+      # acceleration, which is what an acceleration quantity should use.
+      #
+      # This is the channel that responds to a tap. 0x34-0x36 is filtered to the
+      # point of being a tilt output; this is the vibration.
+      #
+      # UNSIGNED, as a magnitude, and for the reason velocity taught us: the
+      # signed reading only diverges above 32767 counts, which is 16 g and only
+      # reachable during a real event.
+      - {key: accel_amplitude_x, label: Acceleration amplitude X, quantity: acceleration_amplitude, unit: g, address: 0x37, data_type: uint16, scale: 0.00048828125, minimum: 0, maximum: 32}
+      - {key: accel_amplitude_y, label: Acceleration amplitude Y, quantity: acceleration_amplitude, unit: g, address: 0x38, data_type: uint16, scale: 0.00048828125, minimum: 0, maximum: 32}
+      - {key: accel_amplitude_z, label: Acceleration amplitude Z, quantity: acceleration_amplitude, unit: g, address: 0x39, data_type: uint16, scale: 0.00048828125, minimum: 0, maximum: 32}
       - {key: vib_velocity_x, label: Vibration velocity X, quantity: vibration_velocity, unit: mm/s, address: 0x3A, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
       - {key: vib_velocity_y, label: Vibration velocity Y, quantity: vibration_velocity, unit: mm/s, address: 0x3B, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}
       - {key: vib_velocity_z, label: Vibration velocity Z, quantity: vibration_velocity, unit: mm/s, address: 0x3C, data_type: uint16, scale: 0.01, minimum: 0, maximum: 655.35}

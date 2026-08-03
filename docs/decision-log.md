@@ -619,3 +619,46 @@ as orientation. Below 0.1 g no angle is emitted at all.
 ADR-020 so vibration was visible against gravity, hides tilt exactly - tilt *is* a
 change in the static offset. With orientation now on its own cards in degrees,
 the acceleration card defaults to absolute again and offset removal is one click.
+
+## ADR-025: 0x37-0x39 are acceleration amplitude, not angular rate
+
+**Status.** Accepted. Supersedes the exclusion recorded in the original profile.
+
+**What was wrong.** 0x37-0x39 sit in a gap the manufacturer's table skips - it
+jumps 0x36 to 0x3A. They were live and responded to excitation, and ADR-021
+reasoned they could not be angle registers because they read 10-15 counts with
+the unit at a 12 degree tilt. That reasoning was sound and the conclusion drawn
+from it - "almost certainly angular velocity" - was a guess. They were left
+unmapped on the strength of it.
+
+**What they are.** The vendor Windows software lists "X/Y/Z acceleration
+amplitude" between Acceleration and velocity amplitude in its own column order,
+which is exactly this gap. Its Graph tab makes the distinction plain: the
+`Acceleration` chart sits flat while `Acceleration Amplitude` beside it spikes on
+every tap.
+
+Confirmed three ways rather than accepted on the vendor's word:
+
+- **Behaviour.** 0x37-0x39 change 5-6.5 times per second across 10-15 distinct
+  values in a 15 s window, while 0x34-0x36 change 0-0.8 times with 1-2 values.
+- **Magnitude.** The vendor showed X 0.0068 g and Y 0.0068 g at rest; the same
+  registers here give 0.0063 and 0.0068 g.
+- **Scaling.** The factor that produces that agreement is raw/32768*16, which is
+  the acceleration scaling - what an acceleration quantity should use.
+
+**Why it mattered.** This is the only channel on the device that expresses
+vibration in acceleration units. Its absence is the whole reason tapping the
+sensor appeared to do nothing: 0x34-0x36 is filtered hard enough to be a tilt
+output, and the quantity that responds was being read and discarded on every
+poll. It sits inside the merged 0x34-0x46 span, so mapping it cost no bus time
+at all - 16 channels now come back in the same 19-register transaction that
+previously carried 13.
+
+**The general lesson.** The gate that verifies a register map can confirm what a
+register *is*; it cannot tell you what an unmapped register is *for*. Both
+mistakes on this device - the signed velocity in ADR-021 and this one - were in
+that blind spot, and both were resolved by comparing against the vendor's own
+software rather than by reasoning harder about the table.
+
+**Still excluded.** 0x3D-0x3F remain unmapped. They read constantly zero and
+nothing suggests they carry anything.

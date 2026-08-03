@@ -81,6 +81,9 @@ class EventSpec:
 #: explicit signal for a channel. Values are plausible for a healthy machine.
 DEFAULTS: dict[str, SignalSpec] = {
     "acceleration": SignalSpec(waveform="sine", base=0.0, amplitude=0.02, frequency_hz=3.0, noise=0.002),
+    # The vibration component of acceleration: near zero at rest, spiking on
+    # excitation. Nothing like the acceleration signal, which carries gravity.
+    "acceleration_amplitude": SignalSpec(waveform="noise", base=0.01, amplitude=0.008, noise=0.002),
     "angular_velocity": SignalSpec(waveform="noise", base=0.0, amplitude=0.5, noise=0.1),
     "magnetic_field": SignalSpec(waveform="constant", base=300.0, noise=5.0),
     "attitude_angle": SignalSpec(waveform="sine", base=0.0, amplitude=0.5, frequency_hz=0.05, noise=0.01),

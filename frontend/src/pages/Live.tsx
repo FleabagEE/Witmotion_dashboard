@@ -50,6 +50,15 @@ const CARDS: CardSpec[] = [
     offsetRemovable: true,
     note: 'includes gravity',
   },
+  {
+    // The channel that actually responds to a tap. 0x34-0x36 is filtered hard
+    // enough to be a tilt output; this is the vibration, in the same units.
+    title: 'Acceleration amplitude',
+    unit: 'g',
+    traces: axisTraces('accel_amplitude'),
+    decimals: 4,
+    note: 'vibration only, gravity excluded',
+  },
   { title: 'Velocity', unit: 'mm/s', traces: axisTraces('vib_velocity'), decimals: 2 },
   { title: 'Displacement', unit: 'µm', traces: axisTraces('vib_displacement'), decimals: 0 },
   { title: 'Dominant frequency', unit: 'Hz', traces: axisTraces('vib_frequency'), decimals: 1 },
