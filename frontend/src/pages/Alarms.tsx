@@ -48,10 +48,22 @@ export function Alarms({ user }: { user: CurrentUser }) {
                   {a.state === 'cleared' && <Pill tone="muted">cleared</Pill>}
                   {a.provisional && <Pill tone="warn">provisional</Pill>}
                 </div>
+                {/* The peak, not the latest reading. An alarm latches until it
+                    is acknowledged, so by the time anyone looks the current
+                    value is usually back to nothing - showing 0.05 against a
+                    limit of 3 beside a CRITICAL badge reads as a broken
+                    dashboard. What breached the limit is the peak. */}
                 <div className="tnum text-sm">
-                  {a.value?.toFixed(3)} <span className="text-ink-dim">{a.unit}</span>
+                  {(a.peak_value ?? a.value)?.toFixed(3)}{' '}
+                  <span className="text-ink-dim">{a.unit}</span>
                   {a.threshold !== null && (
                     <span className="ml-2 text-xs text-ink-dim">limit {a.threshold?.toFixed(3)}</span>
+                  )}
+                  {a.peak_value !== null && a.value !== null
+                    && a.peak_value !== a.value && (
+                    <div className="text-xs font-normal text-ink-dim">
+                      peak · now {a.value?.toFixed(3)} {a.unit}
+                    </div>
                   )}
                 </div>
               </div>
