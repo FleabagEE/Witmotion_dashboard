@@ -60,6 +60,13 @@ else
 fi
 "$REPO/.venv/bin/pip" -q install --upgrade pip
 "$REPO/.venv/bin/pip" -q install "pymodbus>=3.6" pyserial pydantic pyyaml
+
+# Install the package itself, not just its dependencies. Without this the only
+# things that can run are the systemd units, which carry their own PYTHONPATH -
+# every operator tool fails with ModuleNotFoundError, and the test suite does not
+# notice because pytest sets pythonpath in pyproject.toml. Editable, so the
+# checked-out tree stays the single source of truth.
+"$REPO/.venv/bin/pip" -q install -e "$REPO/acquisition"
 log "dependencies installed"
 
 echo "5. udev rules"

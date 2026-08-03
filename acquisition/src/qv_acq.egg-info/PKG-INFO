@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: qv-acq
+Version: 0.1.0
+Summary: QuakeVault industrial Modbus acquisition service
+Requires-Python: >=3.12
+Requires-Dist: pymodbus>=3.6
+Requires-Dist: pyserial>=3.5
+Requires-Dist: pydantic>=2.6
+Requires-Dist: pyyaml>=6.0

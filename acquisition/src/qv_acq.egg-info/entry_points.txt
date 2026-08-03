@@ -1,0 +1,5 @@
+[console_scripts]
+qv-acq = qv_acq.service:main
+qv-calibrate = qv_acq.calibrate_cli:main
+qv-forwarder = qv_acq.forwarder_service:main
+qv-probe = qv_acq.probe:main

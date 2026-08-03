@@ -10,10 +10,10 @@ individually without starting over - and the captures remain on disk as evidence
 for what the fitted numbers were derived from.
 
     # for each of the six orientations:
-    python -m qv_acq.calibrate_cli capture --label z-up
+    qv-calibrate capture --label z-up
 
     # then, once all six are taken:
-    python -m qv_acq.calibrate_cli solve
+    qv-calibrate solve
 
 Nothing is applied until the solved file is installed at
 /etc/quakevault/calibration.yaml and the service restarted.
@@ -167,7 +167,7 @@ def solve_command(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="python -m qv_acq.calibrate_cli",
+        prog="qv-calibrate",
         description="Fit a six-position accelerometer calibration.",
     )
     sub = p.add_subparsers(dest="command", required=True)

@@ -309,8 +309,8 @@ The serial port is exclusive, so stop the acquisition service first.
 
 ```bash
 sudo systemctl stop quakevault-acq
-sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
-    -m qv_acq.probe --start 0x34 --count 20
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-probe \
+    --start 0x34 --count 20
 sudo systemctl start quakevault-acq
 ```
 
@@ -332,8 +332,8 @@ registers.
 and prints only what changed:
 
 ```bash
-sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
-    -m qv_acq.probe --start 0x30 --count 64 --watch
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-probe \
+    --start 0x30 --count 64 --watch
 ```
 
 Then move the sensor and read the output:
@@ -386,8 +386,8 @@ For each of `z-up z-down x-up x-down y-up y-down`, rest the sensor on that face,
 let it settle, then:
 
 ```bash
-sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
-    -m qv_acq.calibrate_cli capture --label z-up
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-calibrate \
+    capture --label z-up
 ```
 
 Each capture averages five seconds and **refuses itself** if the readings vary by
@@ -399,8 +399,7 @@ one of them re-taken without starting over.
 Then fit:
 
 ```bash
-sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
-    -m qv_acq.calibrate_cli solve
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-calibrate solve
 ```
 
 It reports axis coverage first and **refuses to fit below 0.8**. Six captures all

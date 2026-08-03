@@ -17,8 +17,7 @@ The port is exclusive. The acquisition service holds it while running, so stop i
 first:
 
     sudo systemctl stop quakevault-acq
-    sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \\
-        -m qv_acq.probe --watch
+    sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-probe --watch
     sudo systemctl start quakevault-acq
 """
 
@@ -117,7 +116,7 @@ def sweep(client, slave, start, count, mapping, previous, show_all) -> list[int]
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="python -m qv_acq.probe",
+        prog="qv-probe",
         description="Read and decode sensor registers directly.",
         epilog="Stop quakevault-acq first: it holds the serial port exclusively.",
     )
