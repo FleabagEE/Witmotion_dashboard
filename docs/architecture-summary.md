@@ -405,41 +405,63 @@ useEffect(() => {
 }, [selected])
 ```
 
-### 4.4 Reconnection handling — **this is a real gap, not a feature**
+### 4.4 Reconnection handling
 
-You asked for the snippet handling drops, buffer flushes and resets. **There
-isn't one.** Grepping the whole frontend for `disconnect|reconnect|state_change`
-returns nothing.
+Driven by the socket's own state, not by frame arrival:
 
-What actually happens on a WebSocket drop:
+```ts
+export function subscribeToConnectionState(onState: (state: LiveState) => void): () => void {
+  const connection = liveConnection()
+  if (!connection) { onState('disconnected'); return () => {} }
 
-- ✅ **Data keeps flowing.** TanStack Query's `refetchInterval` (1 s on the 1-min
-  window) is independent of the socket, so the chart degrades to polling and
-  stays correct.
-- ✅ **`pusher-js` reconnects on its own**, and `subscribeToSensor` returns a
-  clean teardown that runs on sensor change and unmount.
-- ❌ **The status pill lies.** `setConnected(true)` is called on the first frame
-  and **never set back to false**:
+  const pusher = connection.connector.pusher
+  const handler = ({ current }: { current: string }) => {
+    onState(current === 'connected' ? 'connected' : 'disconnected')
+  }
+  handler({ current: pusher.connection.state })   // report the state we are already in
+  pusher.connection.bind('state_change', handler)
+  return () => pusher.connection.unbind('state_change', handler)
+}
+```
 
-  ```tsx
-  const [connected, setConnected] = useState(false)   // never returns to false
-  <Pill tone={connected ? 'ok' : 'muted'}>{connected ? 'websocket' : 'polling'}</Pill>
-  ```
+```tsx
+useEffect(() => {
+  return subscribeToConnectionState((state) => {
+    const live = state === 'connected'
+    setConnected(live)
+    if (!live) setLiveFrames([])   // stale frames would look current until the window slid past them
+  })
+}, [])
+```
 
-  So during an outage the UI claims `websocket` while actually serving 1-second
-  polled data. The data is right; the badge describing its freshness is wrong.
+**Why not infer it from frames.** The first version set `connected` on frame
+arrival and never cleared it. A frame only proves the socket was up *when it was
+sent*, so the badge latched on and kept claiming `websocket` throughout an
+outage - describing 1-second polled data as live. The data was never wrong; the
+label describing its freshness was, which on a monitoring appliance is the worse
+failure of the two.
 
-- ❌ **Stale live frames are not evicted on disconnect.** They age out of the
-  time window on their own, but only once the window slides past them.
+**Verified by pulling the server out from under it** (`systemctl stop
+quakevault-reverb`):
 
-**Fix (not yet applied):** bind Pusher's `connection.state_change`, drive
-`connected` from the real socket state rather than from frame arrival, and clear
-`liveFrames` on disconnect so the chart falls cleanly back to stored data.
+| Stage | Socket | Badge | Data |
+|---|---|---|---|
+| Steady state | `connected` | `websocket` | 17 frames/s |
+| Reverb stopped | `unavailable` | `polling` | still updating via REST (28.91 → 28.84 °C) |
+| Reverb restarted | `connected` | `websocket` | 52 frames resumed |
+
+Reconnection itself is pusher-js's, with its own backoff — recovery took tens of
+seconds, during which the UI honestly reported `polling`. `subscribeToSensor`
+returns a teardown that runs on sensor change and unmount.
 
 There is no "MCU reset event" to handle. Device-side faults surface instead
 through the `fault_diagnosis` register group and through `quality: bad` frames
 when the sensor stops answering; liveness is evaluated server-side by
 `AlarmEvaluator::evaluateLiveness()`.
+
+**Gap: there is no frontend test suite.** No vitest, no testing-library — the
+behaviour above is verified by hand and by hand only, unlike the backend (140
+tests) and acquisition (212). Anything in `frontend/` can regress silently.
 
 ---
 

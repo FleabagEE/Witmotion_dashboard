@@ -66,8 +66,21 @@ services:
     volumes:
       - ./deploy/mosquitto/config:/mosquitto/config:ro
       - qv_mosquitto_data:/mosquitto/data
+    # The healthcheck authenticates, because allow_anonymous is false and an
+    # unauthenticated probe would only prove the port is open. Without this the
+    # check ran with an empty password and could never pass - it failed 7665
+    # times in a row while the broker was working perfectly, which is worse than
+    # having no healthcheck at all.
+    environment:
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?MQTT_PASSWORD must be set in .env}
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -p 1883 -u quakevault -P \"$$MQTT_PASSWORD\" -t '$$SYS/broker/uptime' -C 1 -W 3 >/dev/null 2>&1 || exit 1"]
+      # Publishes inside quakevault/#, which is the namespace the appliance
+      # actually uses, rather than reading $SYS/broker/uptime. The ACL grants
+      # this user nothing outside quakevault/#, so the old $SYS probe was denied
+      # and timed out - the check was testing a permission the appliance is
+      # deliberately not given. A publish exercises connect, auth and the write
+      # ACL, which is precisely what MqttPublisher needs to work.
+      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -p 1883 -u quakevault -P \"$$MQTT_PASSWORD\" -t 'quakevault/healthcheck' -m ok >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 6s
       retries: 3

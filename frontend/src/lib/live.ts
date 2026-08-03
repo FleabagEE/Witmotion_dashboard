@@ -38,6 +38,39 @@ export function liveConnection(): Echo<'reverb'> | null {
   return echo
 }
 
+/** Whether the live feed is actually delivering, as reported by the socket. */
+export type LiveState = 'connected' | 'disconnected'
+
+/**
+ * Watch the real socket state.
+ *
+ * Deliberately not inferred from frame arrival. A frame proves the socket was
+ * up when it was sent and says nothing about now, so a UI driven that way
+ * latches to "connected" and keeps claiming it through an outage - describing
+ * polled data as live. Pusher reconnects on its own; this reports what it is
+ * actually doing.
+ */
+export function subscribeToConnectionState(
+  onState: (state: LiveState) => void,
+): () => void {
+  const connection = liveConnection()
+  if (!connection) {
+    onState('disconnected')
+    return () => {}
+  }
+
+  const pusher = connection.connector.pusher
+  const handler = ({ current }: { current: string }) => {
+    onState(current === 'connected' ? 'connected' : 'disconnected')
+  }
+
+  // Report the state we are already in, not just the next change to it.
+  handler({ current: pusher.connection.state })
+  pusher.connection.bind('state_change', handler)
+
+  return () => pusher.connection.unbind('state_change', handler)
+}
+
 export function subscribeToSensor(
   sensorId: string,
   onFrame: (frame: LiveFrame) => void,

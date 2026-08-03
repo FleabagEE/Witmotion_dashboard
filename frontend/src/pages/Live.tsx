@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { WaveformCard, type Trace } from '../components/WaveformCard'
 import { Empty, Pill, relativeAge } from '../components/ui'
-import { subscribeToSensor, type LiveFrame } from '../lib/live'
+import { subscribeToSensor, subscribeToConnectionState, type LiveFrame } from '../lib/live'
 import type { SeriesPoint } from '../lib/api'
 
 /** Axis colours are consistent across every card, so X is always X. */
@@ -91,6 +91,20 @@ export function Live() {
   // authoritative copy still travels the durable path behind it.
   const [liveFrames, setLiveFrames] = useState<LiveFrame[]>([])
   const [connected, setConnected] = useState(false)
+
+  // Driven by the socket itself rather than by frames arriving. A frame only
+  // proves the socket was up when it was sent, so treating one as evidence of
+  // a live connection leaves the badge stuck on "websocket" through an outage,
+  // describing polled data as live. On a disconnect the buffered frames are
+  // dropped too: they would otherwise sit on the chart looking current until
+  // the time window slid past them.
+  useEffect(() => {
+    return subscribeToConnectionState((state) => {
+      const live = state === 'connected'
+      setConnected(live)
+      if (!live) setLiveFrames([])
+    })
+  }, [])
   const windowMs = active.seconds * 1000
   const windowRef = useRef(windowMs)
   windowRef.current = windowMs
@@ -99,7 +113,6 @@ export function Live() {
     if (!selected) return
     setLiveFrames([])
     const unsubscribe = subscribeToSensor(selected, (frame) => {
-      setConnected(true)
       setLiveFrames((previous) => {
         const cutoff = Date.now() - windowRef.current
         const next = [...previous, frame].filter((f) => f.t >= cutoff)
