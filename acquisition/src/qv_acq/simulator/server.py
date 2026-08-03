@@ -145,9 +145,16 @@ class SimulatorServer:
                 if self.response_delay_ms:
                     time.sleep(self.response_delay_ms / 1000.0)
 
+                # The fd can be closed while this thread sleeps out a response
+                # delay, leaving it None. The previous OSError guard did not
+                # catch that - it surfaced as a TypeError traceback from a
+                # daemon thread, which is noise that can hide a real failure in
+                # a test run.
+                if self._master_fd is None:
+                    return
                 try:
                     os.write(self._master_fd, response)
-                except OSError:
+                except (OSError, TypeError):
                     return
                 self.requests_served += 1
 
