@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\DB;
 class AlarmsSelfTest extends Command
 {
     protected $signature = 'alarms:selftest
-        {--definition= : key or id, default the first enabled one}
+        {--definition= : key or id, default a confirmed one}
         {--level=critical : advisory, warning or critical}';
 
     protected $description = 'Drive a real alarm through the real notification path and report every gate';
@@ -45,6 +45,12 @@ class AlarmsSelfTest extends Command
                 return is_numeric($key) ? $q->where('id', (int) $key) : $q->where('key', $key);
             })
             ->where('enabled', true)
+            // A confirmed definition first. Defaulting to whichever came first
+            // meant the test picked an unconfirmed one and reported that
+            // nothing would be delivered - true of that definition, and
+            // completely misleading about the appliance, which was by then
+            // fully able to send.
+            ->orderByRaw('thresholds_confirmed_by IS NULL')
             ->first();
 
         if (! $definition) {
@@ -68,6 +74,23 @@ class AlarmsSelfTest extends Command
         $this->line('Thresholds : '.($definition->thresholdsConfirmed()
             ? 'confirmed by '.$definition->thresholds_confirmed_by
             : 'NOT CONFIRMED — sends will be suppressed'));
+        // Named, because "would an alarm reach anyone" is a question about the
+        // appliance and this command can only answer it for one definition at a
+        // time.
+        $unconfirmed = AlarmDefinition::where('enabled', true)
+            ->whereNull('thresholds_confirmed_by')
+            ->pluck('name');
+
+        if ($unconfirmed->isNotEmpty()) {
+            $this->warn(sprintf(
+                '%d other enabled definition(s) are unconfirmed and would send nothing:',
+                $unconfirmed->count(),
+            ));
+            foreach ($unconfirmed as $name) {
+                $this->line("  {$name}");
+            }
+        }
+
         $this->newLine();
 
         $results = [];

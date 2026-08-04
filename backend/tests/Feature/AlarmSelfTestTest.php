@@ -102,4 +102,36 @@ class AlarmSelfTestTest extends TestCase
             ->expectsOutputToContain('below_min_level')
             ->assertFailed();
     }
+
+    public function test_it_prefers_a_confirmed_definition(): void
+    {
+        // Defaulting to whichever definition came first made the command report
+        // that nothing would be delivered on an appliance that was, by then,
+        // fully able to send. True of that definition; misleading about the
+        // appliance.
+        $confirmed = $this->scenario(confirmed: true);
+
+        AlarmDefinition::create([
+            'key' => 'liveness-first', 'name' => 'Sensor silent',
+            'condition_type' => 'sensor_offline', 'unit' => 'seconds',
+            'critical_at' => 360, 'enabled' => true,
+        ]);
+
+        $this->artisan('alarms:selftest')
+            ->expectsOutputToContain($confirmed->name)
+            ->assertSuccessful();
+    }
+
+    public function test_it_names_the_definitions_that_would_still_send_nothing(): void
+    {
+        $this->scenario(confirmed: true);
+        AlarmDefinition::create([
+            'key' => 'liveness-x', 'name' => 'Sensor silent', 'condition_type' => 'sensor_offline',
+            'unit' => 'seconds', 'critical_at' => 360, 'enabled' => true,
+        ]);
+
+        $this->artisan('alarms:selftest')
+            ->expectsOutputToContain('Sensor silent')
+            ->assertSuccessful();
+    }
 }
