@@ -101,6 +101,8 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
     : Math.abs(movement) >= 0.5 ? 'warn'
     : 'ok'
 
+  const disturbed = points.filter((p) => p.disturbed && !p.pre_commissioning).length
+  const plotted = points.filter((p) => (baseline ? p.deviation : p.tilt) !== null).length
   const bucketMs = sensor.series.bucket_seconds * 1000
 
   // Contiguous runs of disturbed buckets, collapsed into bands. One band per
@@ -160,7 +162,12 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
       {
         name: baseline ? 'Movement' : 'Tilt',
         type: 'line',
-        showSymbol: false,
+        // Markers when the series is sparse. A freshly commissioned sensor has
+        // one or two points on a seven-day view, and a line joining fewer than
+        // two of them draws nothing at all - the chart then looks like it is
+        // plotting only temperature, which is how this was noticed.
+        showSymbol: plotted <= 30,
+        symbolSize: 5,
         lineStyle: { width: 1.8, color: '#a371f7' },
         data: points.map((p) => [p.t, baseline ? p.deviation : p.tilt]),
         // Excluded buckets break the line rather than being bridged across.
@@ -204,8 +211,6 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
     ],
   }
 
-  const disturbed = points.filter((p) => p.disturbed && !p.pre_commissioning).length
-  const plotted = points.filter((p) => p.deviation !== null).length
 
   return (
     <section className="space-y-4">
@@ -291,7 +296,10 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
                     {disturbed} interval(s) discarded — sensor handled
                   </span>
                 )}
-                <span className="text-ink-dim">{plotted} point(s) plotted</span>
+                <span className={plotted < 3 ? 'text-warning' : 'text-ink-dim'}>
+                  {plotted} point(s) plotted
+                  {plotted < 3 && baseline && ' — too few to show a trend yet'}
+                </span>
               </span>
             </header>
             <div className="px-1 pb-1 pt-2">
