@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\AlarmActionController;
+use App\Http\Controllers\Api\AlarmDefinitionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\IngestController;
 use App\Http\Controllers\Api\ReadController;
 use App\Http\Controllers\Api\SpectrumController;
 use App\Http\Controllers\Api\TiltController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -43,6 +45,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/spectrum', SpectrumController::class)->name('spectrum');
         Route::get('/tilt', TiltController::class)->name('tilt');
         Route::get('/alarms', [ReadController::class, 'alarms'])->name('alarms.index');
+
+        // Readable by anyone who can read: an operator who cannot see the
+        // threshold cannot judge whether an alarm matters.
+        Route::get('/alarm-definitions', [AlarmDefinitionController::class, 'index'])
+            ->name('alarm-definitions.index');
     });
 
     // Acknowledgement is an operational act, not a read. A kiosk screen in a
@@ -50,5 +57,28 @@ Route::prefix('v1')->group(function (): void {
     Route::middleware(['auth:sanctum', 'ability:acknowledge'])->group(function (): void {
         Route::post('/alarms/{alarm}/acknowledge', [AlarmActionController::class, 'acknowledge'])
             ->name('alarms.acknowledge');
+    });
+
+    /*
+     * Administration. Only the administrator role carries `administer`.
+     *
+     * Changing a threshold silences or raises an alarm and leaves the dashboard
+     * looking healthy either way, so it sits behind the highest ability the
+     * appliance has - above `configure`, which an engineer holds. An operator
+     * can acknowledge what happened; only an administrator can change what
+     * counts as happening.
+     */
+    Route::middleware(['auth:sanctum', 'ability:administer'])->group(function (): void {
+        Route::patch('/alarm-definitions/{definition}', [AlarmDefinitionController::class, 'update'])
+            ->name('alarm-definitions.update');
+        Route::post('/alarm-definitions/{definition}/confirm', [AlarmDefinitionController::class, 'confirm'])
+            ->name('alarm-definitions.confirm');
+
+        Route::get('/users', [UserController::class, 'index'])->name('users.index');
+        Route::post('/users', [UserController::class, 'store'])->name('users.store');
+        Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
+        Route::post('/users/{user}/password', [UserController::class, 'resetPassword'])
+            ->name('users.password');
+        Route::get('/roles', [UserController::class, 'roles'])->name('roles.index');
     });
 });

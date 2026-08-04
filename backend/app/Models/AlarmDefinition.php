@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AlarmDefinition extends Model
@@ -66,6 +67,12 @@ class AlarmDefinition extends Model
         );
 
         return $this;
+    }
+
+    /** The sensor this definition is scoped to, if any. Null means every sensor. */
+    public function sensor(): BelongsTo
+    {
+        return $this->belongsTo(Sensor::class);
     }
 
     public function events(): HasMany

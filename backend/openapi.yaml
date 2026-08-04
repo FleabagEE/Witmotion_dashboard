@@ -34,6 +34,8 @@ tags:
   - name: auth
   - name: read
   - name: alarms
+  - name: admin
+    description: Administrator only. Requires the `administer` ability.
   - name: ingest
     description: Appliance-only. Requires the `ingest` ability and nothing else.
 
@@ -403,6 +405,256 @@ paths:
         "200": { description: Recorded }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /api/v1/alarm-definitions:
+    get:
+      tags: [alarms]
+      summary: The numbers alarms are judged against
+      description: |
+        Readable by anyone with `read`. An operator who cannot see the threshold
+        cannot judge whether an alarm matters.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AlarmDefinition" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/alarm-definitions/{definition}:
+    patch:
+      tags: [alarms]
+      summary: Change a threshold
+      description: |
+        Requires `administer` — the highest ability the appliance has, above the
+        `configure` an engineer holds. Raising a limit silences an alarm and
+        leaves the dashboard looking healthy, which is indistinguishable from a
+        structure that stopped moving, so the change is audited with both values
+        and a mandatory reason.
+
+        **Changing any of the numbers clears the confirmation.** A signature
+        given for 3 degrees is not a signature for 12, and the appliance must not
+        page anyone on the authority of one that was given for something else.
+        Toggling `enabled` or widening a timer does not clear it.
+      parameters:
+        - { name: definition, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                advisory_at: { type: [number, "null"] }
+                warning_at: { type: [number, "null"] }
+                critical_at: { type: [number, "null"] }
+                hysteresis: { type: number, minimum: 0 }
+                persistence_seconds: { type: integer, minimum: 0, maximum: 86400 }
+                clear_seconds: { type: integer, minimum: 0, maximum: 604800 }
+                debounce_seconds: { type: integer, minimum: 0, maximum: 86400 }
+                latching: { type: boolean }
+                enabled: { type: boolean }
+                reason:
+                  type: string
+                  minLength: 3
+                  description: Why. Recorded in the audit trail; not optional.
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, confirmation_cleared]
+                properties:
+                  data: { $ref: "#/components/schemas/AlarmDefinition" }
+                  confirmation_cleared:
+                    type: boolean
+                    description: |
+                      True when this edit invalidated an existing sign-off. The
+                      dashboard will look calmer afterwards and the reason must
+                      not be a surprise.
+        "403": { description: Requires the administer ability }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/alarm-definitions/{definition}/confirm:
+    post:
+      tags: [alarms]
+      summary: Record that a named person checked these numbers
+      description: |
+        Separate from an edit on purpose. Confirming asserts something about the
+        outside world — that somebody opened the standard or the engineer's
+        report and checked. Letting it ride along with an edit would allow
+        signing off one's own change in the same breath.
+
+        Until this is done, alarms from the definition are displayed and never
+        sent, whatever notification channels exist.
+      parameters:
+        - { name: definition, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmed_by, reference]
+              properties:
+                confirmed_by: { type: string, description: The person accountable. }
+                reference: { type: string, description: What was checked against. }
+                note: { type: string }
+      responses:
+        "200":
+          description: Confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AlarmDefinition" }
+        "403": { description: Requires the administer ability }
+
+  /api/v1/users:
+    get:
+      tags: [admin]
+      summary: Every account, with its role and abilities
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/ManagedUser" } }
+        "403": { description: Requires the administer ability }
+    post:
+      tags: [admin]
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, role, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                role: { type: string, enum: [viewer, operator, engineer, administrator, auditor, kiosk] }
+                password: { type: string, minLength: 12 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ManagedUser" }
+        "403": { description: Requires the administer ability }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/users/{user}:
+    patch:
+      tags: [admin]
+      summary: Change a role, or activate and deactivate
+      description: |
+        Two refusals are enforced here rather than in the interface, because a
+        hidden button still permits the request: an administrator may not remove
+        their own administrator role, and the last active administrator may not
+        be demoted or deactivated. Either is one click from an appliance in a
+        plant room that nobody can administer.
+
+        Deactivating also revokes every token for that account. A deactivated
+        user with a live session is not deactivated.
+      parameters:
+        - { name: user, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                role: { type: string }
+                active: { type: boolean }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ManagedUser" }
+        "403": { description: Requires the administer ability }
+        "422": { description: Refused - would leave the appliance without an administrator }
+
+  /api/v1/users/{user}/password:
+    post:
+      tags: [admin]
+      summary: Set a new password and revoke every session
+      parameters:
+        - { name: user, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 12 }
+      responses:
+        "200":
+          description: Reset
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, sessions_revoked]
+                properties:
+                  data: { $ref: "#/components/schemas/ManagedUser" }
+                  sessions_revoked:
+                    type: integer
+                    description: |
+                      A password change that leaves old sessions alive has not
+                      locked anybody out.
+        "403": { description: Requires the administer ability }
+
+  /api/v1/roles:
+    get:
+      tags: [admin]
+      summary: The roles on offer and what each may do
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [role, abilities]
+                      properties:
+                        role: { type: string }
+                        abilities: { type: array, items: { type: string } }
+        "403": { description: Requires the administer ability }
+
 components:
 
   securitySchemes:
@@ -757,6 +1009,48 @@ components:
             Returned rather than dropped so a client can shade the period: the
             excluded history stays visible without setting the scale of an axis
             that has to resolve hundredths of a degree.
+
+    AlarmDefinition:
+      type: object
+      required: [id, key, name, enabled, actionable]
+      properties:
+        id: { type: integer }
+        key: { type: string }
+        name: { type: string }
+        sensor_id: { type: [string, "null"] }
+        channel_key: { type: [string, "null"] }
+        condition_type: { type: string }
+        unit: { type: [string, "null"] }
+        advisory_at: { type: [number, "null"] }
+        warning_at: { type: [number, "null"] }
+        critical_at: { type: [number, "null"] }
+        hysteresis: { type: [number, "null"] }
+        persistence_seconds: { type: [integer, "null"] }
+        clear_seconds: { type: [integer, "null"] }
+        debounce_seconds: { type: [integer, "null"] }
+        latching: { type: [boolean, "null"] }
+        enabled: { type: boolean }
+        thresholds_confirmed_by: { type: [string, "null"] }
+        thresholds_confirmed_at: { type: [string, "null"], format: date-time }
+        thresholds_reference: { type: [string, "null"] }
+        actionable:
+          type: boolean
+          description: |
+            False means alarms from this definition are displayed and never sent,
+            whatever channels exist. Nobody has put their name to the numbers.
+
+    ManagedUser:
+      type: object
+      required: [id, name, email, role, abilities, active]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string }
+        abilities: { type: array, items: { type: string } }
+        active: { type: boolean }
+        last_login_at: { type: [string, "null"], format: date-time }
+        created_at: { type: [string, "null"], format: date-time }
 
     Envelope:
       type: object
