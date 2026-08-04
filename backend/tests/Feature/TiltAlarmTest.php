@@ -127,4 +127,69 @@ class TiltAlarmTest extends TestCase
         // is correct, and is also why the appliance would page nobody today.
         $this->assertTrue((bool) $event->provisional);
     }
+
+    /**
+     * The whole chain: a silo leans, and somebody who is not looking at the
+     * dashboard finds out.
+     *
+     * Every link was tested in isolation and the chain had never been. The one
+     * that was broken - the definition being filtered out before evaluation -
+     * sat between two well-tested components, which is exactly where nothing was
+     * looking.
+     */
+    public function test_a_leaning_silo_reaches_somebody_who_is_not_watching(): void
+    {
+        $sensor = $this->sensor();
+        $definition = TiltCheck::provision($sensor, warningDeg: 0.5, criticalDeg: 3.0);
+
+        // Both human decisions made: a route out, and a named person owning the
+        // number. Without either, the appliance stays silent by design.
+        $this->artisan('alarms:channel', [
+            'name' => 'duty-engineer', 'transport' => 'log', '--min-level' => 'warning',
+        ])->assertSuccessful();
+
+        $definition->update([
+            'thresholds_confirmed_by' => 'A. Engineer',
+            'thresholds_confirmed_at' => now(),
+        ]);
+
+        $this->leaning(5.36);
+        $this->artisan('tilt:check');
+        $this->travel(2)->hours();
+        $this->leaning(5.36);
+        $this->artisan('tilt:check');
+
+        $event = DB::table('alarm_events')->where('channel_key', 'tilt_deviation')->first();
+        $this->assertNotNull($event, 'no alarm was raised');
+        $this->assertSame('critical', $event->level);
+        $this->assertFalse((bool) $event->provisional, 'a confirmed threshold must not be provisional');
+
+        $delivered = DB::table('notification_deliveries')->get();
+
+        $this->assertNotEmpty($delivered, 'the alarm raised but reached nobody');
+        $this->assertTrue(
+            $delivered->contains(fn ($d) => $d->status === 'sent'),
+            'every delivery was suppressed or failed: '
+            . $delivered->pluck('status')->implode(', '),
+        );
+    }
+
+    public function test_without_a_confirmed_threshold_nothing_is_sent(): void
+    {
+        $sensor = $this->sensor();
+        TiltCheck::provision($sensor, warningDeg: 0.5, criticalDeg: 3.0);
+        $this->artisan('alarms:channel', ['name' => 'duty', 'transport' => 'log']);
+
+        $this->leaning(5.36);
+        $this->artisan('tilt:check');
+        $this->travel(2)->hours();
+        $this->leaning(5.36);
+        $this->artisan('tilt:check');
+
+        // Raised and visible, but never sent. Unverified numbers have earned a
+        // place on the dashboard and nothing more.
+        $this->assertDatabaseHas('alarm_events', ['channel_key' => 'tilt_deviation']);
+        $sent = DB::table('notification_deliveries')->where('status', 'sent')->count();
+        $this->assertSame(0, $sent);
+    }
 }
