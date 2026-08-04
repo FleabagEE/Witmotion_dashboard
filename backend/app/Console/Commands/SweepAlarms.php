@@ -29,7 +29,20 @@ class SweepAlarms extends Command
                 }
             });
 
+        // Definitions can also be disabled directly - through a seeder, a
+        // migration, or somebody editing the row - not only through
+        // alarms:disable. Any of those leaves open events that nothing will
+        // ever evaluate again, so the sweep catches them here too.
+        $retired = $evaluator->retireOrphanedEvents();
+
         $this->info("liveness sweep: {$checked} sensor(s) checked, {$changed} alarm change(s)");
+
+        if ($retired !== []) {
+            $this->warn(sprintf(
+                '%d event(s) retired - their definition is no longer enabled',
+                count($retired),
+            ));
+        }
 
         return self::SUCCESS;
     }

@@ -46,6 +46,12 @@ export function Alarms({ user }: { user: CurrentUser }) {
                   <span className="text-sm font-medium">{a.name ?? 'Alarm'}</span>
                   <span className="text-xs text-ink-dim">{a.channel_key}</span>
                   {a.state === 'cleared' && <Pill tone="muted">cleared</Pill>}
+                  {/* Distinct from cleared on purpose. Cleared means the
+                      measurement came back within limits; retired means the
+                      check was switched off and nothing ever observed a
+                      recovery. Showing them the same way would put a fact in
+                      the record that was never measured. */}
+                  {a.state === 'retired' && <Pill tone="muted">check disabled</Pill>}
                   {a.provisional && <Pill tone="warn">provisional</Pill>}
                 </div>
                 {/* The peak, not the latest reading. An alarm latches until it

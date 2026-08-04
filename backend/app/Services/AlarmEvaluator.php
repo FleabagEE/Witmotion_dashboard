@@ -69,6 +69,48 @@ class AlarmEvaluator
         return $changed;
     }
 
+    /**
+     * Close open events whose definition is no longer enabled.
+     *
+     * Disabling a definition stops it being evaluated, which sounds like it
+     * would end its alarms and does the opposite: the open events are never
+     * looked at again, so they never clear and never age out. Two of them sat
+     * "active" on the dashboard after their definition was retired, with no
+     * mechanism anywhere that could ever have closed them.
+     *
+     * They are closed as `retired` rather than `cleared`. Cleared means the
+     * measurement came back within limits, which is a statement about the
+     * structure. Nothing here observed the structure - somebody turned the
+     * check off - and recording that as a recovery would put a fact in the
+     * history that was never measured.
+     *
+     * @return list<AlarmEvent>
+     */
+    public function retireOrphanedEvents(?Carbon $at = null): array
+    {
+        $at ??= Carbon::now();
+
+        $events = AlarmEvent::query()
+            ->where('state', 'active')
+            ->whereDoesntHave('definition', fn ($q) => $q->where('enabled', true))
+            ->get();
+
+        foreach ($events as $event) {
+            $event->state = 'retired';
+            $event->cleared_at = $at;
+            $event->metadata = array_merge($event->metadata ?? [], [
+                'retired_reason' => 'alarm definition disabled or removed',
+                'retired_at' => $at->toIso8601String(),
+                // Kept so the record still says what the alarm had seen. The
+                // event is being closed administratively, not answered.
+                'peak_level_at_retirement' => $event->peak_level,
+            ]);
+            $event->save();
+        }
+
+        return $events->all();
+    }
+
     /** @return iterable<AlarmDefinition> */
     private function definitionsFor(Sensor $sensor, string $channelKey): iterable
     {
