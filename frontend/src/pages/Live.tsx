@@ -135,13 +135,23 @@ export function Live() {
     queryFn: () => api.multiSeries(selected!, ALL_CHANNELS, active.seconds, active.points),
     enabled: Boolean(selected),
     refetchInterval: active.refetch,
-    // Keep the previous window on screen while the next one loads, so the
-    // charts do not blank on every refresh.
-    placeholderData: (previous) => previous,
+    // Keep the previous response on screen while the next one loads, so the
+    // charts do not blank on every refresh - but ONLY within the same window.
+    //
+    // Unconditionally reusing it meant that when a request for a new window
+    // failed, the page kept drawing the old window's data under the new
+    // window's label: a day of hourly averages presented as five seconds. A
+    // chart showing the wrong span is worse than a chart showing nothing,
+    // because nothing announces itself and wrong data does not.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === active.seconds ? previous : undefined,
   })
 
   const stored = feed.data?.series
   const resolution = feed.data?.resolution
+  // Surfaced rather than rendered as an empty chart. "No data in this window"
+  // and "the request was rejected" look identical and are not the same problem.
+  const feedError = feed.isError ? (feed.error as Error).message : null
 
   // Frames arriving over the websocket, appended to whatever the last stored
   // fetch returned. This is what removes the store-and-forward latency: the
@@ -251,6 +261,7 @@ export function Live() {
             series={series}
             decimals={card.decimals}
             resolution={resolution}
+            error={feedError}
             note={card.note}
             offsetRemovable={card.offsetRemovable}
           />

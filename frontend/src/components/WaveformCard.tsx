@@ -24,6 +24,7 @@ export function WaveformCard({
   decimals = 3,
   resolution,
   note,
+  error,
   offsetRemovable = false,
 }: {
   title: string
@@ -33,6 +34,8 @@ export function WaveformCard({
   decimals?: number
   resolution?: 'raw_bucketed' | 'hourly_rollup'
   note?: string
+  /** Request failure, shown in place of the empty-window message. */
+  error?: string | null
   /**
    * Offer to plot deviation from each trace's mean instead of absolute value.
    *
@@ -176,10 +179,16 @@ export function WaveformCard({
 
       <div className="relative px-1 pb-1 pt-2">
         <ReactECharts option={option} style={{ height: 176 }} notMerge lazyUpdate />
-        {!hasData && (
+        {(!hasData || error) && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="rounded bg-panel-2/90 px-3 py-1 text-xs text-ink-dim">
-              no data in this window
+            <span
+              className={`rounded px-3 py-1 text-xs ${
+                error ? 'bg-critical/15 text-critical' : 'bg-panel-2/90 text-ink-dim'
+              }`}
+            >
+              {/* A rejected request and an empty window look identical on an
+                  empty chart and are not the same problem. */}
+              {error ?? 'no data in this window'}
             </span>
           </div>
         )}

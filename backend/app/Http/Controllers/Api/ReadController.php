@@ -235,7 +235,12 @@ class ReadController extends Controller
         $data = $request->validate([
             'sensor_id' => ['required', 'string', 'max:80'],
             'channels' => ['required', 'string', 'max:400'],
-            'seconds' => ['nullable', 'integer', 'min:10', 'max:604800'],
+            // One second, not ten. The floor was arbitrary and it silently
+            // rejected the 2 and 5 second windows the live page offers for
+            // watching a single tap land - the request 422'd, the client fell
+            // back to the previous window's data, and the page alternated
+            // between a day of hourly averages and "no data".
+            'seconds' => ['nullable', 'integer', 'min:1', 'max:604800'],
             'max_points' => ['nullable', 'integer', 'min:10', 'max:2000'],
         ]);
 

@@ -367,4 +367,34 @@ class DashboardApiTest extends TestCase
             'trigger_value' => 6.0, 'threshold' => 5.0, 'unit' => 'mm/s', 'raised_at' => now(),
         ]);
     }
+
+    /**
+     * The live page offers 2 and 5 second windows; the API rejected both.
+     *
+     * The failure was not a visible error. The request 422'd, the client kept
+     * the previous window's response on screen, and the page alternated between
+     * a day of hourly averages labelled "5 sec" and "no data in this window".
+     * A chart showing the wrong span is worse than one showing nothing, because
+     * nothing announces itself and wrong data does not.
+     */
+    public function test_short_windows_are_accepted(): void
+    {
+        foreach ([1, 2, 5, 10] as $seconds) {
+            $this->asRole()->getJson(
+                "/api/v1/series/multi?sensor_id=SENSOR-001&channels=accel_x&seconds={$seconds}"
+            )->assertOk();
+        }
+    }
+
+    public function test_a_short_window_is_not_served_as_an_hourly_rollup(): void
+    {
+        $response = $this->asRole()->getJson(
+            '/api/v1/series/multi?sensor_id=SENSOR-001&channels=accel_x&seconds=5'
+        )->assertOk();
+
+        // The label the page prints comes from this field. Serving a rollup for
+        // a five second request is what put "hourly averages" on a 5 sec chart.
+        $this->assertSame('raw_bucketed', $response->json('resolution'));
+        $this->assertLessThanOrEqual(5, $response->json('bucket_seconds'));
+    }
 }
