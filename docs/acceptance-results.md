@@ -142,3 +142,50 @@ The simulator wrote to its pty after the descriptor was closed, when shutdown
 landed while a thread was sleeping out an injected response delay. The guard
 caught `OSError` but the failure was a `TypeError`, so it surfaced as a traceback
 from a daemon thread - noise that can hide a real failure in a test run. Fixed.
+
+## 24-hour soak — 2026-08-03 12:01 to 2026-08-04 12:00
+
+288 samples at 5-minute cadence, acquisition never restarted.
+
+| Metric | Start → end | Median | Verdict |
+|---|---|---|---|
+| Acquisition RSS | 48,060 → 48,176 KB | 47,940 | +0.6% — no leak |
+| Forwarder RSS | 48,812 → 46,328 KB | 42,640 | no growth |
+| Spool backlog | 3 → 2 (max 17) | 4 | drains |
+| Measured poll rate | 9.26 → 9.12 Hz | **8.38** | drift −0.0% |
+| Bus utilisation | 0.652 → 0.599 | 0.605 | headroom |
+| Live frames dropped | 0 | 0 | lossy by design |
+| DB rows | 18.47M → 34.12M | — | 15.7M in 24 h |
+
+**Passes on stability. Fails on absolute rate.**
+
+The run shows no degradation of any kind: memory flat, backlog draining,
+zero dropped frames, and a poll-rate drift of −0.0% measured as two-hour
+medians at each end.
+
+But the achieved rate is **8.38 Hz against a configured 10** — 16% short, and
+short for the entire run rather than sagging into it. Bus utilisation is 0.60,
+so the bus is not the constraint; the shortfall is in the polling loop itself.
+
+This was invisible until now for two reasons, both fixed in `soak.sh`:
+
+- The drift verdict compared the **first and last individual samples**. With a
+  sample-to-sample standard deviation of 0.57 Hz that statistic describes which
+  samples landed at the ends, not the run. It reported −1.6% from a run whose
+  two-hour medians were identical.
+- **Nothing compared the achieved rate to the configured one.** The report only
+  ever asked whether the rate changed, never whether it had arrived. A rate that
+  is stable but 16% low is not sagging — it never got there.
+
+### Caveat on the final two hours
+
+Full test suites were run repeatedly on this machine during the last hour of the
+soak. Timing jitter over that window is 6.08 ms against 1.63 ms an hour earlier.
+The bulk of the run is unaffected; the tail is contaminated by that load and
+should not be read as representative.
+
+### Not investigated
+
+The 16% shortfall is recorded, not explained. It does not block the tilt-only
+deployment, which polls at 1 Hz — a rate the loop clears by a wide margin — but
+it remains an open question about the 10 Hz path.

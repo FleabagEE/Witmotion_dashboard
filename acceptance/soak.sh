@@ -26,7 +26,8 @@ q() { "${PSQL[@]}" "$1" 2>/dev/null | tr -d '[:space:]'; }
 report() {
     [[ -f "$OUT" ]] || { echo "no soak data at $OUT"; exit 1; }
     python3 - "$OUT" <<'PY'
-import csv, sys
+import csv, os, sys
+from statistics import median
 rows = list(csv.DictReader(open(sys.argv[1])))
 if len(rows) < 2:
     print(f"only {len(rows)} sample(s) so far - too early to report"); sys.exit()
@@ -57,6 +58,11 @@ def line(label, key, unit="", dp=0):
     print(f"  {label}")
     span = f"(min {min(v):,.{dp}f}  max {max(v):,.{dp}f})"
     print(f"    {v[0]:,.{dp}f} -> {v[-1]:,.{dp}f} {unit}".rstrip() + f"  {span}")
+    # Median too. First-and-last are two individual samples, and on a metric
+    # that varies sample to sample they describe the noise rather than the run:
+    # the poll rate reported "9.26 -> 9.12" from a distribution whose median was
+    # 8.38, so the two numbers on display were both unrepresentative.
+    print(f"    median {median(v):,.{dp}f} {unit}".rstrip())
 
 line("acquisition RSS", "acq_rss_kb", "KB")
 line("forwarder RSS", "fwd_rss_kb", "KB")
@@ -68,10 +74,28 @@ line("DB rows", "db_rows")
 line("live dropped", "live_dropped")
 
 print()
+
+
+def ends(v, window=24):
+    """Median of the first and last window, not the first and last sample.
+
+    A day-long soak exists to separate drift from noise, and comparing two
+    individual samples cannot do that. The poll rate has a sample-to-sample
+    standard deviation of 0.57 Hz, so first-vs-last reported -1.6% from a run
+    whose two-hour medians were identical - the verdict was measuring which
+    samples happened to land at the ends.
+
+    Window is 24 samples: two hours at the default five-minute cadence.
+    """
+    w = min(window, max(1, len(v) // 4))
+    return median(v[:w]), median(v[-w:])
+
+
 # The verdicts that matter over a day, rather than at any one moment.
 rss = nums("acq_rss_kb")
 if rss and len(rss) > 3:
-    growth = (rss[-1] - rss[0]) / max(rss[0], 1) * 100
+    first, last = ends(rss)
+    growth = (last - first) / max(first, 1) * 100
     verdict = "OK" if abs(growth) < 25 else "INVESTIGATE - possible leak"
     print(f"  memory drift {growth:+.1f}%  {verdict}")
 
@@ -83,8 +107,19 @@ if bl:
 
 hz = nums("poll_hz")
 if hz and len(hz) > 3:
-    sag = (hz[-1] - hz[0]) / max(hz[0], 1e-9) * 100
+    first, last = ends(hz)
+    sag = (last - first) / max(first, 1e-9) * 100
     print(f"  poll rate drift {sag:+.1f}%  " + ("OK" if abs(sag) < 15 else "INVESTIGATE - sagging"))
+
+    # Drift is only half the question. A rate that is stable but well under
+    # what was configured is not sagging - it never arrived - and the report
+    # had no line that would ever have said so.
+    target = os.environ.get("SOAK_TARGET_HZ")
+    if target:
+        shortfall = (median(hz) - float(target)) / float(target) * 100
+        print(f"  poll rate vs configured {shortfall:+.1f}%  "
+              + (f"({median(hz):.2f} of {float(target):.2f} Hz)")
+              + ("" if abs(shortfall) < 10 else "  INVESTIGATE - never reached target"))
 
 drop = nums("live_dropped")
 if drop:
