@@ -114,6 +114,11 @@ class AlarmsSelfTest extends Command
                 'threshold' => $definition->critical_at,
                 'unit' => $definition->unit,
                 'raised_at' => now(),
+                // Carried into the message itself. A test that reads exactly
+                // like a real alarm teaches people that alarms from this
+                // appliance are sometimes not real, which is the one lesson it
+                // must never teach.
+                'metadata' => ['self_test' => true],
             ]);
 
             $results = $dispatcher->dispatch($event);

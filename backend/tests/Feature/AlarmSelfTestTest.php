@@ -134,4 +134,53 @@ class AlarmSelfTestTest extends TestCase
             ->expectsOutputToContain('Sensor silent')
             ->assertSuccessful();
     }
+
+    public function test_a_test_message_says_it_is_a_test(): void
+    {
+        /**
+         * The failure this prevents is not technical.
+         *
+         * The first self-test sent an email reading "[CRITICAL] Tilt movement
+         * from baseline" with nothing to distinguish it from a silo actually
+         * moving. Somebody paged at three in the morning by an appliance being
+         * checked will either drive out to a structure that is fine, or learn
+         * that alarms from this system are sometimes not real - and the second
+         * is how a monitoring system stops working while appearing to work.
+         */
+        $definition = $this->scenario(confirmed: true);
+
+        $event = new \App\Models\AlarmEvent([
+            'alarm_definition_id' => $definition->id,
+            'channel_key' => 'tilt_deviation',
+            'level' => 'critical',
+            'unit' => 'deg',
+            'metadata' => ['self_test' => true],
+        ]);
+        $event->setRelation('definition', $definition);
+
+        $dispatcher = app(\App\Services\NotificationDispatcher::class);
+
+        $subject = (fn () => $this->subject($event))->call($dispatcher);
+        $body = (fn () => $this->body($event))->call($dispatcher);
+
+        $this->assertStringContainsString('[TEST]', $subject);
+        $this->assertStringContainsString('THIS IS A TEST', $body);
+        $this->assertStringContainsString('No structure has moved', $body);
+    }
+
+    public function test_a_real_alarm_is_not_labelled_a_test(): void
+    {
+        $definition = $this->scenario(confirmed: true);
+
+        $event = new \App\Models\AlarmEvent([
+            'alarm_definition_id' => $definition->id,
+            'channel_key' => 'tilt_deviation', 'level' => 'critical', 'unit' => 'deg',
+        ]);
+        $event->setRelation('definition', $definition);
+
+        $dispatcher = app(\App\Services\NotificationDispatcher::class);
+
+        $this->assertStringNotContainsString('[TEST]', (fn () => $this->subject($event))->call($dispatcher));
+        $this->assertStringNotContainsString('TEST', (fn () => $this->body($event))->call($dispatcher));
+    }
 }

@@ -217,16 +217,43 @@ class NotificationDispatcher
     private function subject(AlarmEvent $event): string
     {
         return sprintf(
-            '[%s] %s on %s',
+            '%s[%s] %s on %s',
+            $this->isSelfTest($event) ? '[TEST] ' : '',
             strtoupper($event->level),
             $event->definition?->name ?? 'Alarm',
             $event->channel_key,
         );
     }
 
+    /**
+     * Whether this event exists only to prove the notification path works.
+     *
+     * It matters in the message, not just in the log. A self-test message that
+     * reads exactly like a real one is worse than no self-test: somebody paged
+     * at three in the morning by an appliance being checked will either drive to
+     * a silo that has not moved, or - the expensive failure - learn that alarms
+     * from this system are sometimes not real.
+     */
+    private function isSelfTest(AlarmEvent $event): bool
+    {
+        return (bool) (($event->metadata ?? [])['self_test'] ?? false);
+    }
+
     private function body(AlarmEvent $event): string
     {
+        $lines = [];
+
+        if ($this->isSelfTest($event)) {
+            $lines[] = 'THIS IS A TEST. No structure has moved.';
+            $lines[] = '';
+            $lines[] = 'Somebody ran alarms:selftest to check that alarms from this';
+            $lines[] = 'appliance can reach you. Nothing needs to be done.';
+            $lines[] = str_repeat('-', 62);
+            $lines[] = '';
+        }
+
         $lines = [
+            ...$lines,
             $event->definition?->name ?? 'Alarm',
             '',
             sprintf('Level:      %s', $event->level),
