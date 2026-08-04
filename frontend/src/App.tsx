@@ -13,6 +13,7 @@ import { Alarms } from './pages/Alarms'
 import { Thresholds } from './pages/Thresholds'
 import { Users } from './pages/Users'
 import { Events } from './pages/Events'
+import { AlarmBanner } from './components/AlarmBanner'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
@@ -115,6 +116,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Nav user={user} onSignOut={signOut} />
+        {/* Above every page, not only the alarm centre. Nobody watching a live
+            chart thinks to go and look. */}
+        <AlarmBanner />
         <main className="mx-auto max-w-[1800px] px-4 py-5">
           <Routes>
             {/* Movement is the landing page: this appliance monitors settlement.
