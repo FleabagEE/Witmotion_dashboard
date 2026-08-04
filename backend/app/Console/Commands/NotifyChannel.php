@@ -21,7 +21,7 @@ class NotifyChannel extends Command
     protected $signature = 'alarms:channel
         {name : identifier for this route}
         {transport : log, email or webhook}
-        {--to= : email address, or webhook URL}
+        {--to=* : email address (repeatable), or webhook URL}
         {--min-level=warning : advisory, warning or critical}
         {--max-per-hour=6}
         {--dedupe-seconds=900}
@@ -39,9 +39,9 @@ class NotifyChannel extends Command
             return self::FAILURE;
         }
 
-        $to = $this->option('to');
+        $to = (array) $this->option('to');
 
-        if ($transport !== 'log' && ! $to) {
+        if ($transport !== 'log' && $to === []) {
             $this->error("--to is required for {$transport}.");
 
             return self::FAILURE;
@@ -54,7 +54,15 @@ class NotifyChannel extends Command
             [
                 'name' => $this->argument('name'),
                 'transport' => $transport,
-                'config' => $to ? ['to' => $to] : [],
+                // Shapes the dispatcher actually reads. The first version wrote
+                // a 'to' key that sendEmail() never looks at, which would have
+                // produced a channel that exists, looks configured, and throws
+                // "no recipients configured" the first time a silo moved.
+                'config' => match ($transport) {
+                    'email' => ['recipients' => $to],
+                    'webhook' => ['url' => $to[0] ?? null],
+                    default => [],
+                },
                 'enabled' => ! $this->option('disable'),
                 'min_level' => $this->option('min-level'),
                 'max_per_hour' => (int) $this->option('max-per-hour'),
@@ -66,8 +74,9 @@ class NotifyChannel extends Command
             action: 'notification_channel.configured',
             subjectType: 'notification_channel',
             subjectId: (string) $channel->id,
-            summary: sprintf('%s via %s at or above %s',
-                $channel->name, $channel->transport, $channel->min_level),
+            summary: sprintf('%s via %s to %s at or above %s',
+                $channel->name, $channel->transport,
+                implode(', ', $to) ?: 'the system log', $channel->min_level),
             actorTypeOverride: 'console',
             actorNameOverride: 'artisan alarms:channel',
         );
