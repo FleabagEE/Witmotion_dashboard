@@ -72,6 +72,11 @@ class ReadController extends Controller
                 'measurements' => (int) DB::table('measurements')->count(),
                 'oldest' => DB::table('measurements')->min('time'),
             ],
+            // Whether the appliance's own scheduler is alive. Without it,
+            // tilt:check never runs, settlement is never evaluated, and every
+            // other number on this page is still perfectly correct - which is
+            // what makes the failure so quiet.
+            'scheduler' => $this->scheduler(),
             'standards' => [
                 'structural_tables_status' => StructuralVibration::STATUS,
                 // Whether anything can still be judged against those tables.
@@ -86,6 +91,21 @@ class ReadController extends Controller
                     ->exists(),
             ],
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function scheduler(): array
+    {
+        $tick = \Illuminate\Support\Facades\Cache::get('scheduler.last_tick');
+        $seconds = $tick ? now()->diffInSeconds(\Illuminate\Support\Carbon::parse($tick), true) : null;
+
+        return [
+            'last_tick' => $tick,
+            'seconds_since' => $seconds,
+            // Three minutes on a one-minute schedule: late enough to mean
+            // something, early enough to matter before an evaluation is missed.
+            'healthy' => $seconds !== null && $seconds < 180,
+        ];
     }
 
     public function sensors(): JsonResponse

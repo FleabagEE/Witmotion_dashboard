@@ -135,6 +135,12 @@ export interface Overview {
     seconds_since_ingest: number | null
   }[]
   storage: { measurements: number; oldest: string | null }
+  scheduler: {
+    last_tick: string | null
+    seconds_since: number | null
+    /** False means nothing is evaluating settlement, however healthy the rest looks. */
+    healthy: boolean
+  }
   standards: {
     structural_tables_status: string
     /** False when no enabled definition judges against those tables. */

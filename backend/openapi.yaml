@@ -108,6 +108,18 @@ paths:
                 required: [generated_at, sensors]
                 properties:
                   generated_at: { type: string, format: date-time }
+                  scheduler:
+                    type: object
+                    required: [last_tick, seconds_since, healthy]
+                    description: |
+                      Whether the appliance's own scheduler is alive. Settlement
+                      is evaluated by a task that runs every five minutes; if it
+                      stops, every other number here stays correct and nothing is
+                      being monitored.
+                    properties:
+                      last_tick: { type: [string, "null"] }
+                      seconds_since: { type: [integer, "null"] }
+                      healthy: { type: boolean }
                   sensors:
                     type: object
                     required: [total, online, silent]

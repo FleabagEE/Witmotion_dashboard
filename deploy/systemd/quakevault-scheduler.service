@@ -1,0 +1,26 @@
+[Unit]
+Description=QuakeVault scheduled tasks (Laravel scheduler tick)
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+# This unit is not optional decoration. Without it nothing evaluates settlement:
+# tilt:check runs every five minutes and is the only thing that compares the
+# structure against its baseline and raises an alarm. An appliance missing this
+# timer detects nothing, alarms about nothing, and looks entirely healthy while
+# doing so - which is exactly what this one did until it was noticed.
+
+[Service]
+Type=oneshot
+User=quakelogic
+Group=quakelogic
+WorkingDirectory=/var/www/quakevault-industrial/backend
+ExecStart=/usr/bin/php /var/www/quakevault-industrial/backend/artisan schedule:run
+
+# A tick that hangs must not block the next one for ever.
+TimeoutStartSec=120
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only

@@ -1,0 +1,15 @@
+[Unit]
+Description=Run the QuakeVault scheduler every minute
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+
+[Timer]
+# Laravel expects a tick every minute and decides internally what is actually
+# due. A coarser tick would silently stretch every schedule in routes/console.php.
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+# Catch up after the appliance has been off, rather than skipping the window.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

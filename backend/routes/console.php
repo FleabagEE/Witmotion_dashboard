@@ -7,10 +7,22 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
 // Frequent on purpose: the gap between a sensor dying and anyone noticing is the
 // whole point of a liveness alarm.
+// A heartbeat, so the appliance can tell whether its own scheduler is alive.
+//
+// Every alarm on this system depends on tilt:check running every five minutes.
+// This appliance ran for days with no scheduler installed at all: nothing
+// evaluated settlement, nothing could have alarmed, and every page looked
+// healthy. A monitor that cannot notice it has stopped monitoring is the
+// failure this project exists to avoid.
+Schedule::call(fn () => Cache::put('scheduler.last_tick', now()->toIso8601String(), 3600))
+    ->everyMinute()
+    ->name('scheduler-heartbeat');
+
 Schedule::command('alarms:sweep')->everyMinute()->withoutOverlapping();
 
 // An alarm nobody acknowledged is exactly what escalation exists for: the first
