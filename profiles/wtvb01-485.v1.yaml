@@ -1,5 +1,5 @@
 schema_version: "1.0"
-profile_version: "1.1.0"
+profile_version: "1.2.0"
 manufacturer: WitMotion
 model: WTVB01-485
 protocol: modbus_rtu
@@ -155,17 +155,17 @@ register_groups:
     function_code: 3
     default_poll_hz: 1
     channels:
-      - {key: cf_x, label: X acceleration peak factor, quantity: condition_indicator, unit: g, address: 0x47, scale: 0.001}
-      - {key: kurtosis_x, label: X acceleration kurtosis, quantity: condition_indicator, unit: g, address: 0x48, scale: 0.001}
+      - {key: cf_x, label: X acceleration peak factor, quantity: condition_indicator, unit: "1", address: 0x47, scale: 0.001}
+      - {key: kurtosis_x, label: X acceleration kurtosis, quantity: condition_indicator, unit: "1", address: 0x48, scale: 0.001}
       - {key: abs_avg_x, label: X acceleration absolute average, quantity: condition_indicator, unit: g, address: 0x49, scale: 0.001}
-      - {key: variance_x, label: X acceleration variance, quantity: condition_indicator, unit: g, address: 0x4A, scale: 0.001}
+      - {key: variance_x, label: X acceleration variance, quantity: condition_indicator, unit: g^2, address: 0x4A, scale: 0.001}
       - {key: rms_accel_x, label: X acceleration RMS, quantity: condition_indicator, unit: g, address: 0x4B, scale: 0.001}
       - {key: waveform_index_x, label: X acceleration waveform index, quantity: condition_indicator, unit: "1", address: 0x4C, scale: 0.001}
-      - {key: peak_index_x, label: X acceleration peak index, quantity: condition_indicator, unit: g, address: 0x4D, scale: 0.001}
+      - {key: peak_index_x, label: X acceleration peak index, quantity: condition_indicator, unit: "1", address: 0x4D, scale: 0.001}
       - {key: pulse_coefficient_x, label: X acceleration pulse coefficient, quantity: condition_indicator, unit: "1", address: 0x4E, scale: 0.001}
-      - {key: skewness_x, label: X acceleration skewness, quantity: condition_indicator, unit: g, address: 0x4F, scale: 0.001}
+      - {key: skewness_x, label: X acceleration skewness, quantity: condition_indicator, unit: "1", address: 0x4F, scale: 0.001}
       - {key: rms_velocity_x, label: X velocity RMS, quantity: condition_indicator, unit: mm/s, address: 0x50, scale: 0.001}
-      - {key: velocity_kurtosis_x, label: X velocity kurtosis, quantity: condition_indicator, unit: g, address: 0x51, scale: 0.001}
+      - {key: velocity_kurtosis_x, label: X velocity kurtosis, quantity: condition_indicator, unit: "1", address: 0x51, scale: 0.001}
       - {key: rms_displacement_x, label: X displacement RMS, quantity: condition_indicator, unit: mm, address: 0x52, scale: 0.001}
 
   - key: condition_y
@@ -173,17 +173,17 @@ register_groups:
     function_code: 3
     default_poll_hz: 1
     channels:
-      - {key: cf_y, label: Y acceleration peak factor, quantity: condition_indicator, unit: g, address: 0x53, scale: 0.001}
-      - {key: kurtosis_y, label: Y acceleration kurtosis, quantity: condition_indicator, unit: g, address: 0x54, scale: 0.001}
+      - {key: cf_y, label: Y acceleration peak factor, quantity: condition_indicator, unit: "1", address: 0x53, scale: 0.001}
+      - {key: kurtosis_y, label: Y acceleration kurtosis, quantity: condition_indicator, unit: "1", address: 0x54, scale: 0.001}
       - {key: abs_avg_y, label: Y acceleration absolute average, quantity: condition_indicator, unit: g, address: 0x55, scale: 0.001}
-      - {key: variance_y, label: Y acceleration variance, quantity: condition_indicator, unit: g, address: 0x56, scale: 0.001}
+      - {key: variance_y, label: Y acceleration variance, quantity: condition_indicator, unit: g^2, address: 0x56, scale: 0.001}
       - {key: rms_accel_y, label: Y acceleration RMS, quantity: condition_indicator, unit: g, address: 0x57, scale: 0.001}
       - {key: waveform_index_y, label: Y acceleration waveform index, quantity: condition_indicator, unit: "1", address: 0x58, scale: 0.001}
-      - {key: peak_index_y, label: Y acceleration peak index, quantity: condition_indicator, unit: g, address: 0x59, scale: 0.001}
+      - {key: peak_index_y, label: Y acceleration peak index, quantity: condition_indicator, unit: "1", address: 0x59, scale: 0.001}
       - {key: pulse_coefficient_y, label: Y acceleration pulse coefficient, quantity: condition_indicator, unit: "1", address: 0x5A, scale: 0.001}
-      - {key: skewness_y, label: Y acceleration skewness, quantity: condition_indicator, unit: g, address: 0x5B, scale: 0.001}
+      - {key: skewness_y, label: Y acceleration skewness, quantity: condition_indicator, unit: "1", address: 0x5B, scale: 0.001}
       - {key: rms_velocity_y, label: Y velocity RMS, quantity: condition_indicator, unit: mm/s, address: 0x5C, scale: 0.001}
-      - {key: velocity_kurtosis_y, label: Y velocity kurtosis, quantity: condition_indicator, unit: g, address: 0x5D, scale: 0.001}
+      - {key: velocity_kurtosis_y, label: Y velocity kurtosis, quantity: condition_indicator, unit: "1", address: 0x5D, scale: 0.001}
       - {key: rms_displacement_y, label: Y displacement RMS, quantity: condition_indicator, unit: mm, address: 0x5E, scale: 0.001}
 
   - key: condition_z
@@ -191,17 +191,17 @@ register_groups:
     function_code: 3
     default_poll_hz: 1
     channels:
-      - {key: cf_z, label: Z acceleration peak factor, quantity: condition_indicator, unit: g, address: 0x5F, scale: 0.001}
-      - {key: kurtosis_z, label: Z acceleration kurtosis, quantity: condition_indicator, unit: g, address: 0x60, scale: 0.001}
+      - {key: cf_z, label: Z acceleration peak factor, quantity: condition_indicator, unit: "1", address: 0x5F, scale: 0.001}
+      - {key: kurtosis_z, label: Z acceleration kurtosis, quantity: condition_indicator, unit: "1", address: 0x60, scale: 0.001}
       - {key: abs_avg_z, label: Z acceleration absolute average, quantity: condition_indicator, unit: g, address: 0x61, scale: 0.001}
-      - {key: variance_z, label: Z acceleration variance, quantity: condition_indicator, unit: g, address: 0x62, scale: 0.001}
+      - {key: variance_z, label: Z acceleration variance, quantity: condition_indicator, unit: g^2, address: 0x62, scale: 0.001}
       - {key: rms_accel_z, label: Z acceleration RMS, quantity: condition_indicator, unit: g, address: 0x63, scale: 0.001}
       - {key: waveform_index_z, label: Z acceleration waveform index, quantity: condition_indicator, unit: "1", address: 0x64, scale: 0.001}
-      - {key: peak_index_z, label: Z acceleration peak index, quantity: condition_indicator, unit: g, address: 0x65, scale: 0.001}
+      - {key: peak_index_z, label: Z acceleration peak index, quantity: condition_indicator, unit: "1", address: 0x65, scale: 0.001}
       - {key: pulse_coefficient_z, label: Z acceleration pulse coefficient, quantity: condition_indicator, unit: "1", address: 0x66, scale: 0.001}
-      - {key: skewness_z, label: Z acceleration skewness, quantity: condition_indicator, unit: g, address: 0x67, scale: 0.001}
+      - {key: skewness_z, label: Z acceleration skewness, quantity: condition_indicator, unit: "1", address: 0x67, scale: 0.001}
       - {key: rms_velocity_z, label: Z velocity RMS, quantity: condition_indicator, unit: mm/s, address: 0x68, scale: 0.001}
-      - {key: velocity_kurtosis_z, label: Z velocity kurtosis, quantity: condition_indicator, unit: g, address: 0x69, scale: 0.001}
+      - {key: velocity_kurtosis_z, label: Z velocity kurtosis, quantity: condition_indicator, unit: "1", address: 0x69, scale: 0.001}
       - {key: rms_displacement_z, label: Z displacement RMS, quantity: condition_indicator, unit: mm, address: 0x6A, scale: 0.001}
 
   # Manual 10.4.14. Opaque vendor words, no scaling given and no bit meanings

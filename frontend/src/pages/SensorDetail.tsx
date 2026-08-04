@@ -28,7 +28,25 @@ export function SensorDetail() {
     refetchInterval: 3000,
   })
 
-  const selected = channelKey ?? channels.data?.data[0]?.channel_key ?? null
+  // Not channels[0]. The register map's first entry is the packed BCD device
+  // clock, which is not a measurement and plots as an empty chart - so the page
+  // opened on a blank graph labelled "Year and month" every time.
+  const defaultChannel = useMemo(() => {
+    const all = channels.data?.data ?? []
+    const plottable = all.filter(
+      (c) => c.unit !== 'packed' && c.unit !== 'bitfield' && c.quantity !== 'device_time',
+    )
+    // Acceleration first when present: it is what somebody opening a sensor
+    // page is nearly always looking for.
+    return (
+      plottable.find((c) => c.channel_key === 'accel_z')
+      ?? plottable.find((c) => c.quantity === 'acceleration')
+      ?? plottable[0]
+      ?? all[0]
+    )?.channel_key ?? null
+  }, [channels.data])
+
+  const selected = channelKey ?? defaultChannel
   const fromIso = useMemo(
     () => new Date(Date.now() - windowHours * 3600_000).toISOString(),
     [windowHours],
