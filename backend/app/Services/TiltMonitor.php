@@ -231,6 +231,16 @@ class TiltMonitor
     }
 
     /**
+     * Correlation time of the sensor's tilt output, in seconds.
+     *
+     * Measured on the bench unit by tilting it and watching the approach to the
+     * new angle: 63.2% at 9 s, 86.5% at 20 s, 95% at 28 s, 99% at 44 s. That is
+     * a first-order response with a time constant near 9 seconds, applied
+     * inside the sensor and not defeatable from the bus.
+     */
+    private const TILT_CORRELATION_SECONDS = 9.0;
+
+    /**
      * Angular resolution available by averaging.
      *
      * At small angles a tilt error is about the acceleration error divided by g,
@@ -238,16 +248,46 @@ class TiltMonitor
      * 0.028 degrees. Averaging N independent samples improves that as 1/sqrt(N),
      * which is the whole reason a settlement monitor should integrate over
      * minutes rather than react in milliseconds.
+     *
+     * THE WORD THAT DOES THE WORK IS "INDEPENDENT"
+     * --------------------------------------------
+     *
+     * The naive form of this divides by the square root of the sample count and
+     * reports a resolution the instrument does not have. Sampled at 9 Hz through
+     * a filter with a 9 second time constant, consecutive readings are very
+     * nearly the same reading: ten minutes yields about 5200 samples but only
+     * around 33 independent ones. The naive answer for that window was
+     * 0.00039 degrees; the honest one is roughly 0.005.
+     *
+     * For an exponentially correlated process the variance of the mean over a
+     * window T goes as 2*tau/T, so the effective count is T/(2*tau) - and the
+     * sample count only sets the ceiling.
+     *
+     * The distinction does not endanger the 3 degree silo threshold, which it
+     * clears by a factor of several hundred either way. It matters because the
+     * number is displayed next to a baseline and would otherwise invite somebody
+     * to believe a movement of 0.001 degrees meant something.
      */
-    public function resolution(int $samples): array
+    public function resolution(int $samples, ?float $durationSeconds = null): array
     {
         $lsbG = 16.0 / 32768.0;
         $singleSample = rad2deg($lsbG);
 
+        $effective = $samples;
+        if ($durationSeconds !== null && $durationSeconds > 0) {
+            $independent = $durationSeconds / (2 * self::TILT_CORRELATION_SECONDS);
+            $effective = (int) max(1, min($samples, floor($independent)));
+        }
+
         return [
             'single_sample_deg' => round($singleSample, 4),
-            'averaged_deg' => round($singleSample / max(sqrt($samples), 1), 5),
+            'averaged_deg' => round($singleSample / max(sqrt($effective), 1), 5),
             'samples' => $samples,
+            // Reported alongside, so the gap between "how much data" and "how
+            // much information" is visible rather than being quietly folded
+            // into a single optimistic figure.
+            'effective_samples' => $effective,
+            'correlation_seconds' => self::TILT_CORRELATION_SECONDS,
         ];
     }
 }

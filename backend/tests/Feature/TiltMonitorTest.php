@@ -263,4 +263,43 @@ class TiltMonitorTest extends TestCase
         $this->assertStringContainsString('disturbed', $result['reason']);
         $this->assertSame(30, $result['disturbed_minutes']);
     }
+
+    public function test_resolution_counts_information_not_rows(): void
+    {
+        $monitor = $this->monitor();
+
+        // Ten minutes at 9 Hz. The rows are real; the independence is not.
+        $honest = $monitor->resolution(5226, 600.0);
+        $naive = $monitor->resolution(5226);
+
+        $this->assertSame(33, $honest['effective_samples']);
+        $this->assertGreaterThan(
+            $naive['averaged_deg'] * 5,
+            $honest['averaged_deg'],
+            'sampling through a 9 s filter cannot deliver 5226 independent readings',
+        );
+    }
+
+    public function test_polling_faster_does_not_improve_resolution(): void
+    {
+        $monitor = $this->monitor();
+
+        // The same hour, sampled at 1 Hz and at 10 Hz. The sensor's filter sets
+        // the answer, so dropping the poll rate by ten costs nothing - which is
+        // the whole argument for the tilt-only acquisition rate.
+        $slow = $monitor->resolution(3600, 3600.0);
+        $fast = $monitor->resolution(36000, 3600.0);
+
+        $this->assertSame($slow['effective_samples'], $fast['effective_samples']);
+        $this->assertSame($slow['averaged_deg'], $fast['averaged_deg']);
+    }
+
+    public function test_a_short_window_is_limited_by_samples_not_by_the_filter(): void
+    {
+        // Fewer rows than the filter would allow: the sample count is then the
+        // binding constraint and must not be inflated by the duration.
+        $result = $this->monitor()->resolution(5, 600.0);
+
+        $this->assertSame(5, $result['effective_samples']);
+    }
 }

@@ -133,7 +133,9 @@ class TiltBaseline extends Command
         }
 
         $model = $monitor->thermalModel($sensor->sensor_id, (int) $this->option('hours'));
-        $resolution = $monitor->resolution((int) $now->samples);
+        // The window length, not just the sample count. Sampling faster than
+        // the sensor's own filter adds rows, not information.
+        $resolution = $monitor->resolution((int) $now->samples, $minutes * 60.0);
 
         $baseline = [
             'tilt' => round((float) $now->tilt, 4),
@@ -141,6 +143,8 @@ class TiltBaseline extends Command
             'pitch' => round((float) $now->pitch, 4),
             'temp' => round((float) $now->temp, 2),
             'samples' => (int) $now->samples,
+            'window_minutes' => $minutes,
+            'effective_samples' => $resolution['effective_samples'],
             'captured_at' => now()->toIso8601String(),
             'thermal_model' => $model,
             'resolution_deg' => $resolution['averaged_deg'],
