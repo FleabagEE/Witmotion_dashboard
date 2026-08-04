@@ -60,9 +60,39 @@ class TiltController extends Controller
             // The relationship is learned from accumulating data, and a model
             // frozen at commissioning would never improve as the seasons widen
             // the temperature range it has seen.
-            'thermal_model' => $monitor->thermalModel($sensor->sensor_id, $days * 24),
+            // Bounded by commissioning, like the series. Fitted over the whole
+            // window it kept re-reading the bench re-orientations that happened
+            // before the sensor was ever installed, reporting a slope of
+            // -1.22 deg/degC and refusing itself - correctly, but permanently,
+            // because that history never leaves a seven-day window.
+            'thermal_model' => $monitor->thermalModel(
+                $sensor->sensor_id,
+                $this->modelHours($baseline, $days),
+            ),
             'series' => $this->series($sensor->sensor_id, $days, $baseline),
         ];
+    }
+
+    /**
+     * Hours to fit the thermal model over: the window, or the time since
+     * commissioning, whichever is shorter.
+     */
+    private function modelHours(?array $baseline, int $days): int
+    {
+        $hours = $days * 24;
+
+        if (! isset($baseline['captured_at'])) {
+            return $hours;
+        }
+
+        $since = (int) ceil(
+            \Illuminate\Support\Carbon::parse($baseline['captured_at'])->diffInMinutes(now()) / 60,
+        );
+
+        // At least one hour, so a sensor commissioned minutes ago asks a
+        // well-formed question and gets "not enough data" rather than a
+        // zero-length window.
+        return max(1, min($hours, $since));
     }
 
     /**

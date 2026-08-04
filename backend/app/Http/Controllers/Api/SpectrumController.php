@@ -88,8 +88,17 @@ class SpectrumController extends Controller
         }
 
         $frequencyChannel = 'vib_frequency_'.$matches[1];
+        // Good readings only. The register is declared 0-300 Hz and the
+        // decoder already marks anything past that implausible, but this
+        // summary averaged them in anyway and reported a maximum of 381 Hz -
+        // a figure the appliance had itself rejected, presented on the page as
+        // a headline statistic with nothing to say it was not believed.
         $row = DB::selectOne(<<<'SQL'
-            SELECT avg(value) AS mean, min(value) AS lo, max(value) AS hi, count(*) AS n
+            SELECT avg(value) FILTER (WHERE quality = 'good') AS mean,
+                   min(value) FILTER (WHERE quality = 'good') AS lo,
+                   max(value) FILTER (WHERE quality = 'good') AS hi,
+                   count(*)   FILTER (WHERE quality = 'good') AS n,
+                   count(*)   FILTER (WHERE quality <> 'good') AS rejected
             FROM measurements
             WHERE sensor_id = ? AND channel_key = ? AND time >= ? AND value IS NOT NULL
         SQL, [$sensorId, $frequencyChannel, $from]);
@@ -104,6 +113,10 @@ class SpectrumController extends Controller
             'mean_hz' => round((float) $row->mean, 2),
             'min_hz' => round((float) $row->lo, 2),
             'max_hz' => round((float) $row->hi, 2),
+            // Reported, not silently dropped. A window where most readings were
+            // out of range is a different situation from a clean one, and the
+            // summary would otherwise look identical.
+            'rejected_samples' => (int) $row->rejected,
             'samples' => (int) $row->n,
             'note' => 'Computed on-device at full sampling rate. Not limited by the poll rate, '
                 .'and not corroborated by the appliance\'s own record above the defensible band.',

@@ -111,7 +111,11 @@ export interface Overview {
     seconds_since_ingest: number | null
   }[]
   storage: { measurements: number; oldest: string | null }
-  standards: { structural_tables_status: string }
+  standards: {
+    structural_tables_status: string
+    /** False when no enabled definition judges against those tables. */
+    structural_alarms_enabled: boolean
+  }
 }
 
 export interface SensorSummary {

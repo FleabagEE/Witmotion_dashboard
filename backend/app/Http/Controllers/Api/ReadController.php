@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AlarmDefinition;
 use App\Models\AlarmEvent;
 use App\Models\Appliance;
 use App\Models\Sensor;
@@ -73,6 +74,16 @@ class ReadController extends Controller
             ],
             'standards' => [
                 'structural_tables_status' => StructuralVibration::STATUS,
+                // Whether anything can still be judged against those tables.
+                // The banner warning that they are unconfirmed stayed up after
+                // the last structural definition was disabled, so it went on
+                // warning about alarms the appliance could no longer raise -
+                // and a standing warning nobody can act on is how real ones
+                // stop being read.
+                'structural_alarms_enabled' => AlarmDefinition::query()
+                    ->where('condition_type', 'structural_ppv')
+                    ->where('enabled', true)
+                    ->exists(),
             ],
         ]);
     }

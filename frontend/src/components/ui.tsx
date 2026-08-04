@@ -72,13 +72,26 @@ export function Stat({
 }
 
 /** Severity is carried by shape and text as well as colour, never colour alone. */
-export function SeverityBadge({ level, children }: { level: string; children?: ReactNode }) {
+export function SeverityBadge({
+  level, children, muted = false,
+}: { level: string; children?: ReactNode; muted?: boolean }) {
   const style = severityStyle(level)
+
+  // A closed alarm keeps the severity it reached - that is its history and must
+  // not be rewritten - but it should not wear the same solid red as one that is
+  // live. Two retired criticals sat at the top of the alarm centre looking like
+  // an emergency in progress; only a small grey pill said otherwise.
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full bg-panel-2 px-2 py-0.5 text-xs font-medium ring-1 ${style.ring} ${style.text}`}
+      className={
+        `inline-flex items-center gap-1.5 rounded-full bg-panel-2 px-2 py-0.5 text-xs font-medium ring-1 `
+        + (muted ? 'text-ink-dim ring-line' : `${style.ring} ${style.text}`)
+      }
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} aria-hidden />
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${muted ? 'bg-ink-dim/50' : style.dot}`}
+        aria-hidden
+      />
       {children ?? level}
     </span>
   )

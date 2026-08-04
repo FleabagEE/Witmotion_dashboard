@@ -42,7 +42,7 @@ export function Alarms({ user }: { user: CurrentUser }) {
             <li key={a.id} className="rounded border border-line bg-panel-2 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <SeverityBadge level={a.level} />
+                  <SeverityBadge level={a.level} muted={a.state !== 'active'} />
                   <span className="text-sm font-medium">{a.name ?? 'Alarm'}</span>
                   <span className="text-xs text-ink-dim">{a.channel_key}</span>
                   {a.state === 'cleared' && <Pill tone="muted">cleared</Pill>}

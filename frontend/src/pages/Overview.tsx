@@ -30,7 +30,13 @@ export function Overview() {
         />
       </div>
 
-      {(data.standards.structural_tables_status !== 'verified' || data.alarms.provisional > 0) && (
+      {/* Only while something can still be judged against those tables. The
+          banner used to key on the tables' status alone, so it kept warning
+          about unconfirmed thresholds after the last structural check was
+          disabled - a standing warning nobody can act on, which is how the real
+          ones stop being read. */}
+      {((data.standards.structural_tables_status !== 'verified'
+        && data.standards.structural_alarms_enabled) || data.alarms.provisional > 0) && (
         <div className="rounded-lg border border-advisory/40 bg-advisory/10 px-4 py-3 text-sm">
           <strong className="text-advisory">Thresholds not confirmed.</strong>{' '}
           <span className="text-ink-dim">
