@@ -87,6 +87,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  events: (days = 30, kind: 'all' | 'alarms' | 'audit' = 'all') =>
+    request<EventsResponse>(`/events?days=${days}&kind=${kind}`),
   users: () => request<{ data: ManagedUser[] }>('/users'),
   roles: () => request<{ data: { role: string; abilities: string[] }[] }>('/roles'),
   createUser: (body: { name: string; email: string; role: string; password: string }) =>
@@ -408,4 +410,36 @@ export interface ManagedUser {
   active: boolean
   last_login_at: string | null
   created_at: string | null
+}
+
+export interface EventRow {
+  kind: 'alarm' | 'audit'
+  at: string
+  title: string
+  /** alarm only */
+  level?: Severity
+  peak_level?: Severity
+  state?: string
+  sensor?: string | null
+  channel_key?: string | null
+  value?: number | null
+  threshold?: number | null
+  unit?: string | null
+  cleared_at?: string | null
+  acknowledged_at?: string | null
+  provisional?: boolean
+  /** audit only */
+  action?: string
+  actor?: string
+  result?: string
+  before?: unknown
+  after?: unknown
+}
+
+export interface EventsResponse {
+  generated_at: string
+  window_days: number
+  /** False means a second record exists that this role cannot read. */
+  audit_visible: boolean
+  data: EventRow[]
 }

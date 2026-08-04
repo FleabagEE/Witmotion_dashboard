@@ -12,6 +12,7 @@ import { Kiosk } from './pages/Kiosk'
 import { Alarms } from './pages/Alarms'
 import { Thresholds } from './pages/Thresholds'
 import { Users } from './pages/Users'
+import { Events } from './pages/Events'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
@@ -30,6 +31,7 @@ function Nav({ user, onSignOut }: { user: CurrentUser; onSignOut: () => void }) 
     { to: '/signal', label: 'Signal' },
     { to: '/alarms', label: 'Alarms' },
     { to: '/thresholds', label: 'Thresholds' },
+    { to: '/events', label: 'History' },
   ]
 
   // Administration is only shown to those who can use it. The server refuses
@@ -126,6 +128,7 @@ export default function App() {
             <Route path="/alarms" element={<Alarms user={user} />} />
             <Route path="/thresholds" element={<Thresholds user={user} />} />
             <Route path="/users" element={<Users user={user} />} />
+            <Route path="/events" element={<Events />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

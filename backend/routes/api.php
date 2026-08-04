@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AlarmActionController;
 use App\Http\Controllers\Api\AlarmDefinitionController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\IngestController;
 use App\Http\Controllers\Api\ReadController;
 use App\Http\Controllers\Api\SpectrumController;
@@ -50,6 +51,11 @@ Route::prefix('v1')->group(function (): void {
         // threshold cannot judge whether an alarm matters.
         Route::get('/alarm-definitions', [AlarmDefinitionController::class, 'index'])
             ->name('alarm-definitions.index');
+
+        // Alarms to anyone who can read; the audit trail only to those who hold
+        // `audit`. The controller filters, and says in the response that a
+        // second record exists which the caller cannot see.
+        Route::get('/events', EventController::class)->name('events');
     });
 
     // Acknowledgement is an operational act, not a read. A kiosk screen in a

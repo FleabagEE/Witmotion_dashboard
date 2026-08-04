@@ -405,6 +405,48 @@ paths:
         "200": { description: Recorded }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /api/v1/events:
+    get:
+      tags: [read]
+      summary: What happened, and when
+      description: |
+        Two records interleaved: `alarm_events`, what the structure did, and
+        `audit_events`, what people did to the appliance. They are shown together
+        because the interesting answer is often that somebody changed a threshold
+        an hour before the alarms stopped, which is invisible if the two are read
+        separately.
+
+        They are not equally public. Alarms belong to anyone with `read`. The
+        audit trail names individuals and records their actions, so it requires
+        `audit` — held by the auditor and administrator roles. A caller without
+        it gets alarms only, and `audit_visible: false` so the omission is
+        stated rather than silent.
+      parameters:
+        - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 3650 } }
+        - { name: kind, in: query, schema: { type: string, enum: [all, alarms, audit], default: all } }
+        - { name: limit, in: query, schema: { type: integer, default: 200, minimum: 1, maximum: 500 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, window_days, audit_visible, data]
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  window_days: { type: integer }
+                  audit_visible:
+                    type: boolean
+                    description: |
+                      False means a second record exists that this caller may not
+                      read. Stated so nobody concludes from a short list that
+                      nothing happened.
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/HistoryEvent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/v1/alarm-definitions:
     get:
       tags: [alarms]
@@ -1009,6 +1051,36 @@ components:
             Returned rather than dropped so a client can shade the period: the
             excluded history stays visible without setting the scale of an axis
             that has to resolve hundredths of a degree.
+
+    HistoryEvent:
+      type: object
+      required: [kind, at, title]
+      properties:
+        kind: { type: string, enum: [alarm, audit] }
+        at: { type: string }
+        title: { type: string }
+        level: { type: string }
+        peak_level: { type: string }
+        state: { type: string }
+        sensor: { type: [string, "null"] }
+        channel_key: { type: [string, "null"] }
+        value: { type: [number, "null"] }
+        threshold: { type: [number, "null"] }
+        unit: { type: [string, "null"] }
+        cleared_at: { type: [string, "null"] }
+        acknowledged_at: { type: [string, "null"] }
+        provisional:
+          type: boolean
+          description: |
+            Distinguishes an alarm that paged somebody from one that only ever
+            appeared on a screen.
+        action: { type: string }
+        actor: { type: string }
+        result: { type: string }
+        before:
+          description: Value before the change, for audit entries.
+        after:
+          description: Value after the change, including the stated reason.
 
     AlarmDefinition:
       type: object
