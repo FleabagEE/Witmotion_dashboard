@@ -285,8 +285,6 @@ export interface TiltDeviation {
    * under-reports on a wall-mounted unit.
    */
   method: 'gravity_vector' | 'reported_tilt'
-  /** Movement split along the sensor's own axes. Null on a reported_tilt baseline. */
-  components: { x: number; y: number; z: number } | null
   /** Minutes of the averaging window thrown away because the sensor was handled. */
   disturbed_minutes: number
   window_minutes: number

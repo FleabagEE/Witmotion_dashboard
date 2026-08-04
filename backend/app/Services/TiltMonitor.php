@@ -101,10 +101,21 @@ class TiltMonitor
      * degrees no matter how far it goes.
      *
      * The angle between the current gravity direction and the commissioned one
-     * has no such blind spot. It asks "how far has this sensor rotated from
-     * where it was bolted", which is the question settlement monitoring is
-     * actually asking, and it gives the same answer for every mounting
-     * orientation.
+     * asks "how far has this sensor rotated from where it was bolted", which is
+     * the question settlement monitoring is actually asking, and it gives the
+     * same answer for every mounting orientation.
+     *
+     * MAGNITUDE ONLY, AND THAT IS NOT A CHOICE
+     * ----------------------------------------
+     *
+     * The WTVB01-485 reports the absolute value of each acceleration component;
+     * the sign is not transmitted. Measured directly: tipping the unit one way
+     * and then the opposite way both gave accel_x = +0.5152 and +0.4307. See
+     * docs/known-limitations.md.
+     *
+     * This angle survives that rectification. A lean of +0.3 deg and one of
+     * -0.3 deg both compute to 0.3000 deg, which is correct - and is also
+     * precisely the information that is gone. How far, never which way.
      *
      * @param array{0:float,1:float,2:float} $a
      * @param array{0:float,1:float,2:float} $b
@@ -114,43 +125,6 @@ class TiltMonitor
         $dot = $a[0] * $b[0] + $a[1] * $b[1] + $a[2] * $b[2];
 
         return rad2deg(acos(max(-1.0, min(1.0, $dot))));
-    }
-
-    /**
-     * Split the movement into components along the sensor's own axes.
-     *
-     * A single "moved 0.15 degrees" is not enough to act on. A silo leaning
-     * away from its foundation on one side and one twisting round a bracket
-     * that is working loose produce the same magnitude and want different
-     * responses, and the direction is what tells them apart.
-     *
-     * The axes are the sensor's, so the labels have to come from whoever
-     * mounted it - the instrument cannot know which way it was bolted. For the
-     * silo pair: X transverse (sideways along the face), Y longitudinal (up the
-     * silo, the axis gravity sits on), Z radial (out of the wall).
-     *
-     * Angles are signed. Sign is meaningful only against the labels: +radial is
-     * whichever way the sensor's +Z points, which is out of the wall for this
-     * mounting.
-     *
-     * @param array{0:float,1:float,2:float} $base
-     * @param array{0:float,1:float,2:float} $now
-     * @return array{x:float, y:float, z:float}
-     */
-    public static function decompose(array $base, array $now): array
-    {
-        $delta = [$now[0] - $base[0], $now[1] - $base[1], $now[2] - $base[2]];
-
-        // Gravity is a unit vector, so its displacement along an axis is the
-        // sine of the rotation about the perpendicular. Clamped because
-        // rounding can push a component a hair past 1.
-        $component = fn (float $d): float => round(rad2deg(asin(max(-1.0, min(1.0, $d)))), 4);
-
-        return [
-            'x' => $component($delta[0]),
-            'y' => $component($delta[1]),
-            'z' => $component($delta[2]),
-        ];
     }
 
     /**
@@ -289,12 +263,9 @@ class TiltMonitor
         $baseGravity = isset($baseline['gravity']) ? array_values($baseline['gravity']) : null;
         $nowGravity = self::unitVector((float) $now->gx, (float) $now->gy, (float) $now->gz);
 
-        $components = null;
-
         if ($baseGravity !== null && $nowGravity !== null) {
             $rawDeviation = self::angleBetween($nowGravity, $baseGravity);
             $method = 'gravity_vector';
-            $components = self::decompose($baseGravity, $nowGravity);
         } else {
             $rawDeviation = (float) $now->tilt - (float) ($baseline['tilt'] ?? 0);
             $method = 'reported_tilt';
@@ -319,10 +290,6 @@ class TiltMonitor
             // a wall-mounted unit it under-reports; the page says so rather than
             // presenting both as the same number.
             'method' => $method,
-            // Which way, not just how far. Null when the baseline predates
-            // gravity-vector referencing, because a direction cannot be
-            // recovered from a scalar tilt difference.
-            'components' => $components,
             'samples' => (int) $now->samples,
             // Reported so an operator can tell a quiet hour from one that was
             // mostly thrown away. A deviation averaged over three surviving

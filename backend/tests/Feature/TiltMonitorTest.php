@@ -389,47 +389,31 @@ class TiltMonitorTest extends TestCase
         $this->assertTrue($result['available']);
     }
 
-    public function test_movement_is_split_into_the_directions_the_silo_can_lean(): void
+    /**
+     * The measurement that survives the sensor reporting unsigned components.
+     *
+     * The device transmits |ax|, |ay|, |az| and no sign - measured directly by
+     * tipping the unit one way and then the other, both returning a positive
+     * accel_x. The angle between the rectified vectors is still the true angle,
+     * which is why a settlement alarm on how far it has leaned remains sound.
+     */
+    public function test_lean_magnitude_survives_rectification(): void
     {
-        $level = TiltMonitor::unitVector(0.0, -1.0, 0.0);
+        $rectify = fn (array $v) => TiltMonitor::unitVector(abs($v[0]), abs($v[1]), abs($v[2]));
 
-        // Radial: the silo leaning toward or away from the monitored face.
-        $radial = TiltMonitor::decompose($level, TiltMonitor::unitVector(0.0, -0.99985, 0.01745));
-        $this->assertEqualsWithDelta(1.0, $radial['z'], 0.01);
-        $this->assertEqualsWithDelta(0.0, $radial['x'], 0.01);
+        $base = [0.0, -1.0, 0.0];                    // wall-mounted, Y up the silo
+        $oneWay = [+0.005236, -0.999986, 0.0];       // +0.3 deg
+        $theOther = [-0.005236, -0.999986, 0.0];     // -0.3 deg
 
-        // Transverse: sideways along the face - the direction incl_tilt could
-        // not see at all.
-        $transverse = TiltMonitor::decompose($level, TiltMonitor::unitVector(0.01745, -0.99985, 0.0));
-        $this->assertEqualsWithDelta(1.0, $transverse['x'], 0.01);
-        $this->assertEqualsWithDelta(0.0, $transverse['z'], 0.01);
-    }
+        $a = TiltMonitor::angleBetween($rectify($oneWay), $rectify($base));
+        $b = TiltMonitor::angleBetween($rectify($theOther), $rectify($base));
 
-    public function test_the_components_agree_with_the_total(): void
-    {
-        // One degree in each direction is 1.414 total, not 2. A decomposition
-        // that did not satisfy this would be reporting a lean that was not there.
-        $level = TiltMonitor::unitVector(0.0, -1.0, 0.0);
-        $moved = TiltMonitor::unitVector(0.01745, -0.9997, 0.01745);
+        $this->assertEqualsWithDelta(0.3, $a, 0.001);
+        $this->assertEqualsWithDelta(0.3, $b, 0.001);
 
-        $total = TiltMonitor::angleBetween($moved, $level);
-        $c = TiltMonitor::decompose($level, $moved);
-
-        $this->assertEqualsWithDelta(
-            $total,
-            sqrt($c['x'] ** 2 + $c['z'] ** 2),
-            0.01,
-        );
-    }
-
-    public function test_gravity_barely_moves_along_the_vertical_axis(): void
-    {
-        // Y is the silo axis, the one gravity sits on. A small lean changes the
-        // other two components and leaves this one near zero - if it did not,
-        // the mounting convention would be wrong.
-        $level = TiltMonitor::unitVector(0.0, -1.0, 0.0);
-        $c = TiltMonitor::decompose($level, TiltMonitor::unitVector(0.01745, -0.99985, 0.0));
-
-        $this->assertLessThan(0.02, abs($c['y']));
+        // Identical, which is the point twice over: the magnitude is right, and
+        // the direction is gone. Anything claiming to report which way the silo
+        // leaned would be inventing it.
+        $this->assertEqualsWithDelta($a, $b, 1e-9);
     }
 }

@@ -226,6 +226,21 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
 
       {!baseline && <NotCommissioned sensorId={sensor.sensor_id} />}
 
+      {/* Stated on the page, not buried in a document. A single movement figure
+          invites the question "which way", and this instrument cannot answer
+          it - so the page says so rather than leaving somebody to assume. */}
+      <div className="rounded-xl border border-line bg-panel px-5 py-3">
+        <p className="max-w-3xl text-xs leading-relaxed text-ink-dim">
+          <span className="font-medium text-ink">Magnitude only.</span>{' '}
+          The WTVB01-485 reports the size of each acceleration component and not
+          its sign, so this page can say how far the structure has leaned but not
+          which way. A lean of 0.3° north and one of 0.3° south read identically.
+          Comparing two sensors at different heights still separates foundation
+          settlement from bending, because that depends on how much each has
+          moved rather than in which direction.
+        </p>
+      </div>
+
       {deviation?.method === 'reported_tilt' && (
         <div className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-3">
           <h3 className="text-sm font-semibold text-warning">
@@ -322,32 +337,6 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
               <ReactECharts option={option} style={{ height: 300 }} notMerge lazyUpdate />
             </div>
           </div>
-
-          {deviation?.components && sensor.mounting?.axis_labels && (
-            <div className="rounded-xl border border-line bg-panel px-4 py-3">
-              <div className="mb-2 text-[11px] uppercase tracking-wider text-ink-dim">
-                Which way it is leaning
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {(['x', 'z'] as const).map((axis) => {
-                  const value = deviation.components![axis]
-                  const label = sensor.mounting!.axis_labels![axis]
-                  return (
-                    <div key={axis}>
-                      <div className="tnum text-lg font-semibold">
-                        {value >= 0 ? '+' : ''}{value.toFixed(4)}
-                        <span className="ml-1 text-xs font-normal text-ink-dim">°</span>
-                      </div>
-                      <div className="text-[11px] leading-snug text-ink-dim">{label}</div>
-                    </div>
-                  )
-                })}
-              </div>
-              {/* The vertical axis is omitted on purpose: gravity sits on it, so
-                  a lean barely changes it and the number would be noise given
-                  the same weight as a measurement. */}
-            </div>
-          )}
 
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-xl border border-line bg-panel px-4 py-3 text-xs text-ink-dim">
