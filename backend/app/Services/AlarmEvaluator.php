@@ -128,10 +128,26 @@ class AlarmEvaluator
         $channelQuantity = $sensor->channels->firstWhere('channel_key', $channelKey)?->quantity;
 
         foreach ($this->definitionCache[$cacheKey] as $definition) {
-            if ($definition->channel_key !== null && $definition->channel_key !== $channelKey) {
+            $pinnedToChannel = $definition->channel_key !== null;
+
+            if ($pinnedToChannel && $definition->channel_key !== $channelKey) {
                 continue;
             }
-            if ($definition->quantity !== null && $definition->quantity !== $channelQuantity) {
+
+            // Quantity broadens a definition that is NOT pinned to one channel -
+            // "every inclination channel on this sensor". Once a definition names
+            // its channel and that channel matched, the quantity test can only
+            // reject, and for a synthetic channel it always does: tilt_deviation
+            // is computed rather than decoded, so it has no row in `channels`,
+            // its quantity resolves to null, and 'inclination' never equals null.
+            //
+            // The settlement alarm was filtered out on every evaluation from the
+            // day it was provisioned. The definition existed, the deviation was
+            // computed correctly, the command ran every five minutes, and the one
+            // behaviour this appliance is for could not happen.
+            if (! $pinnedToChannel
+                && $definition->quantity !== null
+                && $definition->quantity !== $channelQuantity) {
                 continue;
             }
             if ($definition->requires_verified_profile && ! ($sensor->model?->isTrustworthy() ?? false)) {

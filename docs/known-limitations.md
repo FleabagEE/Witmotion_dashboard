@@ -499,3 +499,49 @@ toward the monitored face from one away from it. If direction matters — and fo
 distinguishing foundation settlement from shell bending across two heights, it
 does — this device cannot supply it. The HWT901B-485 is an inclinometer with
 dedicated signed angle registers; no profile for it exists in this project yet.
+
+## The settlement alarm has never been able to fire (fixed 2026-08-04)
+
+The one behaviour this appliance exists for could not happen, and had not been
+able to happen from the day the alarm was provisioned.
+
+`AlarmEvaluator::definitionsFor()` filtered candidate definitions on both
+channel and quantity:
+
+```php
+if ($definition->channel_key !== null && $definition->channel_key !== $channelKey) continue;
+if ($definition->quantity !== null && $definition->quantity !== $channelQuantity) continue;
+```
+
+`tilt_deviation` is synthetic — computed by `TiltCheck`, never decoded from a
+register — so it has no row in `channels` and its quantity resolves to `null`.
+The definition declares `quantity = 'inclination'`. `'inclination' !== null`, so
+the second test rejected it on every evaluation.
+
+Everything around it worked. The definition was enabled with the right
+thresholds. `tilt:check` ran every five minutes. `deviation()` correctly
+reported 4.7° of movement against a 3° critical threshold. The definition was
+then silently filtered out before it could be judged.
+
+Nothing caught it because no test covered the tilt path into the alarm engine.
+The engine had tests; the deviation calculation had tests; the route between
+them had none, and it was broken.
+
+**Fix.** Quantity is a *broadening* filter — "every inclination channel on this
+sensor" — and only applies to definitions not pinned to a specific channel. Once
+a definition names its channel and that channel matched, quantity can only
+reject. `TiltAlarmTest` now drives a silo past the threshold and asserts an
+alarm appears; it was verified to fail against the old filter.
+
+### Still true after the fix
+
+The alarm raises and displays. It **notifies nobody**, for two reasons that are
+both by design and both unresolved:
+
+- **No notification channels are configured.** Zero rows in
+  `notification_channels`, zero deliveries ever sent.
+- **The thresholds are unconfirmed**, so every event is marked `provisional`,
+  and `NotificationDispatcher` suppresses provisional alarms before any other
+  gate. Nobody has put their name to 3°.
+
+On a remote silo, an alarm that only reaches a dashboard is not an alarm.
