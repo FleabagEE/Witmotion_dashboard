@@ -409,3 +409,75 @@ side is in the sun. That is real movement of the structure, not instrument
 error, and no amount of compensation distinguishes "the silo is warm" from "the
 silo is failing" without the seasonal record. The thermal model is therefore
 reported rather than silently applied.
+
+## The WTVB01-485 reports acceleration as unsigned magnitude
+
+**Confirmed 2026-08-04 by physical experiment. This is the most consequential
+limitation in the project and it invalidates work built on top of it.**
+
+Registers 0x34–0x36 return the *absolute value* of each acceleration component.
+The sign is not transmitted and cannot be recovered.
+
+### Evidence
+
+The sensor was rotated through 180° — aluminium mounting face up, then flat
+against the table — and read from the database with the service running
+normally:
+
+| Orientation | accel_x | accel_y | accel_z |
+|---|---|---|---|
+| Mounting face up | 0.0146 | 0.0083 | **+0.9624** |
+| Mounting face down | 0.0139 | 0.0130 | **+0.9629** |
+
+A signed device goes from +0.96 to −0.96. This one moved by 0.0005 g.
+
+Three independent confirmations:
+
+- **Zero negative values in 7,501,843 acceleration rows** spanning three days
+  that include shaking the unit to 469 mm/s and tilting it past 12°.
+- **`incl_pitch` is negative in 100% of its 854,458 rows**, because it is
+  computed from `-ax` and `ax` is never negative. The sign was never measured;
+  the formula manufactured it.
+- **The decoder is not at fault.** Register 0x60 decodes to −1.2320 through the
+  same `int16` path, so negatives do arrive when the device sends them.
+
+No signed acceleration or angle register exists anywhere in 0x30–0x7F. 0x3D–0x3F,
+where WitMotion's WT-series carries roll/pitch/yaw, read zero on this model.
+
+### What still works
+
+**Total tilt from the mounting axis.** With Y along the silo axis, the angle
+between gravity and Y is `arccos(|ay| / |a|)`, which is unambiguous over
+0°–90° because `|ay|` is large and never folds through zero. A settlement
+alarm on *how far it has leaned* is sound.
+
+**Gain calibration.** Two opposed positions give `|gain + offset|` and
+`|gain − offset|`, which separates them: gain 0.96265, offset −0.00025 g. The
+3.7% error is almost pure gain, and a uniform gain cancels under normalisation,
+so it does not affect an angle — only a magnitude.
+
+### What does not work
+
+**Direction of lean.** Only the octant-ambiguous gravity vector is available.
+For a wall-mounted sensor `|ax|` and `|az|` both sit near zero, which is exactly
+where an unsigned value folds: a lean of +0.1° and one of −0.1° are identical,
+and a slow oscillation reads as a constant offset.
+
+**Six-position calibration as designed.** `z-up` and `z-down` return the same
+vector, so the sphere fit has no orientation information to solve.
+
+**`incl_roll` and `incl_pitch`.** Their signs are artefacts of the formula.
+
+**The direction decomposition added in efaac1f**, and the gravity-vector
+deviation in 8500a34, both assume signed components. The morning was spent
+replacing `incl_tilt` because it could not see a transverse lean; the
+replacement cannot see one either, for a different reason.
+
+### Consequence for the silo
+
+Two sensors reporting unsigned magnitude can tell you the structure has moved
+and by how much. They cannot tell you which way, and they cannot separate a lean
+toward the monitored face from one away from it. If direction matters — and for
+distinguishing foundation settlement from shell bending across two heights, it
+does — this device cannot supply it. The HWT901B-485 is an inclinometer with
+dedicated signed angle registers; no profile for it exists in this project yet.
