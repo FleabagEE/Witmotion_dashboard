@@ -11,6 +11,7 @@ import { Signal } from './pages/Signal'
 import { Kiosk } from './pages/Kiosk'
 import { Alarms } from './pages/Alarms'
 import { Thresholds } from './pages/Thresholds'
+import { Users } from './pages/Users'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
@@ -30,6 +31,12 @@ function Nav({ user, onSignOut }: { user: CurrentUser; onSignOut: () => void }) 
     { to: '/alarms', label: 'Alarms' },
     { to: '/thresholds', label: 'Thresholds' },
   ]
+
+  // Administration is only shown to those who can use it. The server refuses
+  // the requests regardless, so this is decluttering rather than a control.
+  if (user.abilities.includes('administer')) {
+    links.push({ to: '/users', label: 'Users' })
+  }
 
   return (
     <header className="border-b border-line bg-panel">
@@ -118,6 +125,7 @@ export default function App() {
             <Route path="/kiosk" element={<Kiosk />} />
             <Route path="/alarms" element={<Alarms user={user} />} />
             <Route path="/thresholds" element={<Thresholds user={user} />} />
+            <Route path="/users" element={<Users user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
