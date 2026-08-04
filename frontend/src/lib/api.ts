@@ -279,6 +279,8 @@ export interface TiltDeviation {
    * under-reports on a wall-mounted unit.
    */
   method: 'gravity_vector' | 'reported_tilt'
+  /** Movement split along the sensor's own axes. Null on a reported_tilt baseline. */
+  components: { x: number; y: number; z: number } | null
   /** Minutes of the averaging window thrown away because the sensor was handled. */
   disturbed_minutes: number
   window_minutes: number
@@ -311,6 +313,11 @@ export interface TiltSensor {
   sensor_id: string
   verification_status: string | null
   baseline: TiltBaseline | null
+  mounting: {
+    surface?: string
+    position?: string
+    axis_labels?: { x?: string; y?: string; z?: string }
+  } | null
   deviation: TiltDeviation | null
   thermal_model: TiltThermalModel | null
   series: {

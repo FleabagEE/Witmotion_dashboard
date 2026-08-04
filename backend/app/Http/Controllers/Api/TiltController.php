@@ -52,6 +52,9 @@ class TiltController extends Controller
             'sensor_id' => $sensor->sensor_id,
             'verification_status' => $sensor->model?->verification_status,
             'baseline' => $baseline,
+            // How it was bolted down. Without this the signed components are
+            // numbers on unnamed axes, which nobody can act on.
+            'mounting' => ($sensor->metadata ?? [])['mounting'] ?? null,
             'deviation' => $baseline ? $monitor->deviation($sensor->sensor_id, $baseline) : null,
             // Refitted on every request rather than cached with the baseline.
             // The relationship is learned from accumulating data, and a model

@@ -388,4 +388,48 @@ class TiltMonitorTest extends TestCase
         $this->assertSame('reported_tilt', $result['method']);
         $this->assertTrue($result['available']);
     }
+
+    public function test_movement_is_split_into_the_directions_the_silo_can_lean(): void
+    {
+        $level = TiltMonitor::unitVector(0.0, -1.0, 0.0);
+
+        // Radial: the silo leaning toward or away from the monitored face.
+        $radial = TiltMonitor::decompose($level, TiltMonitor::unitVector(0.0, -0.99985, 0.01745));
+        $this->assertEqualsWithDelta(1.0, $radial['z'], 0.01);
+        $this->assertEqualsWithDelta(0.0, $radial['x'], 0.01);
+
+        // Transverse: sideways along the face - the direction incl_tilt could
+        // not see at all.
+        $transverse = TiltMonitor::decompose($level, TiltMonitor::unitVector(0.01745, -0.99985, 0.0));
+        $this->assertEqualsWithDelta(1.0, $transverse['x'], 0.01);
+        $this->assertEqualsWithDelta(0.0, $transverse['z'], 0.01);
+    }
+
+    public function test_the_components_agree_with_the_total(): void
+    {
+        // One degree in each direction is 1.414 total, not 2. A decomposition
+        // that did not satisfy this would be reporting a lean that was not there.
+        $level = TiltMonitor::unitVector(0.0, -1.0, 0.0);
+        $moved = TiltMonitor::unitVector(0.01745, -0.9997, 0.01745);
+
+        $total = TiltMonitor::angleBetween($moved, $level);
+        $c = TiltMonitor::decompose($level, $moved);
+
+        $this->assertEqualsWithDelta(
+            $total,
+            sqrt($c['x'] ** 2 + $c['z'] ** 2),
+            0.01,
+        );
+    }
+
+    public function test_gravity_barely_moves_along_the_vertical_axis(): void
+    {
+        // Y is the silo axis, the one gravity sits on. A small lean changes the
+        // other two components and leaves this one near zero - if it did not,
+        // the mounting convention would be wrong.
+        $level = TiltMonitor::unitVector(0.0, -1.0, 0.0);
+        $c = TiltMonitor::decompose($level, TiltMonitor::unitVector(0.01745, -0.99985, 0.0));
+
+        $this->assertLessThan(0.02, abs($c['y']));
+    }
 }

@@ -323,6 +323,32 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
             </div>
           </div>
 
+          {deviation?.components && sensor.mounting?.axis_labels && (
+            <div className="rounded-xl border border-line bg-panel px-4 py-3">
+              <div className="mb-2 text-[11px] uppercase tracking-wider text-ink-dim">
+                Which way it is leaning
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(['x', 'z'] as const).map((axis) => {
+                  const value = deviation.components![axis]
+                  const label = sensor.mounting!.axis_labels![axis]
+                  return (
+                    <div key={axis}>
+                      <div className="tnum text-lg font-semibold">
+                        {value >= 0 ? '+' : ''}{value.toFixed(4)}
+                        <span className="ml-1 text-xs font-normal text-ink-dim">°</span>
+                      </div>
+                      <div className="text-[11px] leading-snug text-ink-dim">{label}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              {/* The vertical axis is omitted on purpose: gravity sits on it, so
+                  a lean barely changes it and the number would be noise given
+                  the same weight as a measurement. */}
+            </div>
+          )}
+
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-xl border border-line bg-panel px-4 py-3 text-xs text-ink-dim">
               <div className="mb-2 text-[11px] uppercase tracking-wider">Baseline</div>
