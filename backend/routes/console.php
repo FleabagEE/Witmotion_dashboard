@@ -26,6 +26,11 @@ Schedule::command('mqtt:health')->everyMinute()->withoutOverlapping();
 // pruned the table. It reached 3.9 million rows and 1857 MB in three days,
 // growing 1.3 million a day, for a guard whose usefulness is measured in hours.
 // Daily, off-peak, and skipped if the previous run is still going.
+// Settlement moves over weeks, so a five-minute cadence is ample - and the
+// deviation query averages an hour of samples, which has no business on the
+// ingest hot path several times a second.
+Schedule::command('tilt:check')->everyFiveMinutes()->withoutOverlapping();
+
 Schedule::command('ingest:prune-idempotency --days=7')
     ->dailyAt('03:20')
     ->withoutOverlapping();
