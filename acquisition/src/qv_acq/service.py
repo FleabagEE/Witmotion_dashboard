@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .config import DEFAULT_CONFIG_PATH, ApplianceConfig
 from .engine import AcquisitionEngine
+from .throughput import MAX_SUSTAINED_UTILISATION, bus_demand
 from .live import RedisLivePublisher, TeeSink
 from .metrics import render_engine_metrics
 from .portlock import PortBusyError
@@ -210,12 +211,57 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         try:
-            for bus in config.buses:
-                for sensor in bus.sensors:
-                    sensor.to_binding()
+            bindings = [
+                (bus, [sensor.to_binding() for sensor in bus.sensors])
+                for bus in config.buses
+            ]
         except Exception as exc:  # noqa: BLE001
             log.error("configuration error: %s", exc)
             return 2
+
+        # Capacity, not just well-formedness. A config can name every register
+        # correctly and still ask one pair of wires to carry more than it can:
+        # the 24-hour acceptance run was configured for 75.2% utilisation, held
+        # 8.4 Hz of a requested 10 for the entire day, and this check said OK.
+        over = False
+        for bus, sensor_bindings in bindings:
+            rows = []
+            for binding in sensor_bindings:
+                for group in binding.profile.register_groups:
+                    if binding.groups and group.key not in binding.groups:
+                        continue
+                    hz = binding.poll_hz.get(group.key)
+                    if not hz:
+                        continue
+                    addresses = [c.address for c in group.channels]
+                    registers = max(addresses) - min(addresses) + 1
+                    rows.append((f"{binding.sensor_id}/{group.key}", registers, hz))
+
+            demand = bus_demand(rows, bus.baud)
+            verdict = "ok" if demand.feasible else "OVER CAPACITY"
+            print(
+                f"  bus {bus.bus_id}: {demand.utilisation:.1%} utilisation "
+                f"at {bus.baud} baud  [{verdict}]"
+            )
+            for label, hz, single, ms in demand.per_group:
+                print(f"      {label:<28} {hz:>7.2f} Hz  {single:>6.1f} ms  {ms:>7.1f} ms/s")
+
+            if not demand.feasible:
+                over = True
+                # The achievable rate, so the message says what to change to.
+                fixed = sum(ms for _, hz, _, ms in demand.per_group if hz < 1.0)
+                fastest = max(demand.per_group, key=lambda r: r[1])
+                room = MAX_SUSTAINED_UTILISATION * 1000.0 - fixed
+                print(
+                    f"    {fastest[0]} at {fastest[1]:.2f} Hz cannot be sustained. "
+                    f"Below {room / fastest[2]:.1f} Hz the bus holds the rate; "
+                    f"above it the scheduler skips beats instead of falling behind."
+                )
+
+        if over:
+            log.error("configuration exceeds bus capacity")
+            return 2
+
         print(
             f"OK: {config.appliance_id}, {len(config.buses)} bus(es), "
             f"{config.sensor_count()} sensor(s)"

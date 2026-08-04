@@ -20,6 +20,7 @@ the wire time, two real-world costs dominate at higher baud rates:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -155,4 +156,74 @@ def spectral_verdict(sustainable_poll_hz: float, requested_hz: float) -> tuple[b
         f"({sustainable_poll_hz / 2:.1f} Hz) for this channel. Aliasing would "
         "fabricate spectral content. Increase baud, reduce sensors per bus, or "
         "use a sensor with native spectral output."
+    )
+
+
+@dataclass(frozen=True)
+class BusDemand:
+    """What one bus is actually being asked to carry, across every group."""
+
+    milliseconds_per_second: float
+    utilisation: float
+    per_group: tuple[tuple[str, float, float, float], ...]
+    """(label, poll_hz, transaction_ms, milliseconds_per_second) per group."""
+
+    @property
+    def feasible(self) -> bool:
+        """Below the ceiling the scheduler needs to hold a rate.
+
+        Not 100%. A single-threaded bus at 75% utilisation with 69 ms
+        transactions cannot absorb jitter: every late cycle eats into the next
+        one, and the loop starts skipping beats rather than falling behind. The
+        24-hour soak asked for 10 Hz at a modelled 75.2% and delivered 8.4.
+        """
+        return self.utilisation <= MAX_SUSTAINED_UTILISATION
+
+
+#: Ceiling for the sum of every group's demand on one bus.
+#:
+#: Measured, not chosen: the appliance was configured for 75.2% and held 8.4 Hz
+#: of a requested 10 - a 16% shortfall that persisted for a whole day without
+#: degrading, because it was never a degradation. It simply never arrived.
+MAX_SUSTAINED_UTILISATION = 0.65
+
+
+def bus_demand(
+    groups: Sequence[tuple[str, int, float]],
+    baud: int,
+    *,
+    bits_per_char: int = 10,
+    turnaround_ms: float = DEFAULT_TURNAROUND_MS,
+    usb_latency_ms: float = USB_LATENCY_MS["unknown"],
+) -> BusDemand:
+    """Total demand on one bus from every (label, register_count, poll_hz).
+
+    ``estimate`` answers "how fast could this one group go if it had the bus to
+    itself", which is the question nobody was asking. A real appliance polls
+    several groups on several sensors down one pair of wires, and the rate any
+    one of them achieves depends on all the others. Summing them is the whole
+    point, and nothing did it: the acceptance run was configured beyond what the
+    bus could carry and `--check` reported OK.
+    """
+    rows = []
+    total = 0.0
+
+    for label, registers, hz in groups:
+        if hz <= 0:
+            continue
+        single = transaction_ms(
+            baud,
+            registers,
+            bits_per_char=bits_per_char,
+            turnaround_ms=turnaround_ms,
+            usb_latency_ms=usb_latency_ms,
+        )
+        demand = single * hz
+        total += demand
+        rows.append((label, hz, single, demand))
+
+    return BusDemand(
+        milliseconds_per_second=total,
+        utilisation=total / 1000.0,
+        per_group=tuple(rows),
     )

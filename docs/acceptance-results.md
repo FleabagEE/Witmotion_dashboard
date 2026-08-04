@@ -184,8 +184,41 @@ soak. Timing jitter over that window is 6.08 ms against 1.63 ms an hour earlier.
 The bulk of the run is unaffected; the tail is contaminated by that load and
 should not be read as representative.
 
-### Not investigated
+### Explained
 
-The 16% shortfall is recorded, not explained. It does not block the tilt-only
-deployment, which polls at 1 Hz — a rate the loop clears by a wide margin — but
-it remains an open question about the 10 Hz path.
+The shortfall is not a defect in the scheduler. Summed across every configured
+group, the bus was asked to carry **752 ms of traffic per second — 75.2%
+utilisation**:
+
+| Group | Rate | Transaction | Demand |
+|---|---|---|---|
+| motion (19 registers) | 10 Hz | 69.4 ms | 694.2 ms/s |
+| condition_x/y/z (12 each) | 0.33 Hz | 54.8 ms | 54.3 ms/s |
+| fault_diagnosis (3) | 0.1 Hz | 36.1 ms | 3.6 ms/s |
+| **total** | | | **752.1 ms/s** |
+
+At 9600 baud a 19-register read is 69.4 ms, so a 100 ms period is 70% consumed
+by one transaction before anything else runs. At that utilisation a
+single-threaded bus cannot absorb jitter: a late cycle eats the next one, and
+the loop skips a beat rather than falling behind. Working back from the
+utilisation ceiling gives **8.5 Hz achievable** against a measured median of
+**8.38** — the model lands on the measurement from transaction sizes and baud
+rate alone.
+
+The configured 10 Hz was never reachable at 9600 baud. It did not degrade; it
+never arrived.
+
+**Nothing in the system could have said so.** `throughput.estimate()` answers
+"how fast could this one group go with the bus to itself" — 10.98 Hz for motion,
+which made 10 look safe. No code summed the five groups actually configured, and
+`--check` validated register maps and nothing else.
+
+`bus_demand()` now sums a whole bus and `--check` refuses a config above 65%
+utilisation, naming the achievable rate. The production config exits 2; the
+tilt-only config reports 7.3%.
+
+### For the two-sensor deployment
+
+RS-485 is a bus, so both silo sensors share one adapter. At tilt-only rates that
+is **14.6% utilisation for the pair** — ample. The 10 Hz path would not have
+fitted a second sensor at all.
