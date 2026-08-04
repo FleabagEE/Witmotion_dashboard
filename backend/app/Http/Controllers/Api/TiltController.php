@@ -71,29 +71,84 @@ class TiltController extends Controller
      */
     private function series(string $sensorId, int $days, ?array $baseline): array
     {
-        $bucket = match (true) {
-            $days <= 2 => '5 minutes',
-            $days <= 14 => '1 hour',
-            $days <= 90 => '6 hours',
-            default => '1 day',
+        [$bucket, $bucketSeconds] = match (true) {
+            $days <= 2  => ['5 minutes', 300],
+            $days <= 14 => ['1 hour', 3600],
+            $days <= 90 => ['6 hours', 21600],
+            default     => ['1 day', 86400],
         };
 
+        // Averaged from quiet minutes only, the same rule the headline deviation
+        // and the thermal model use.
+        //
+        // Plotting every bucket raw made the page misleading to look at. A few
+        // minutes of handling put 13 degree spikes in the trace, the y-axis
+        // stretched to fit them, and the settlement signal - which lives in
+        // hundredths of a degree - was crushed into a flat line on the zero
+        // gridline. The chart was scaled by the disturbances and showed none of
+        // the measurement.
+        //
+        // Disturbed buckets are not hidden: they come back as null so the line
+        // breaks, and disturbed_minutes drives a shaded band on the chart. The
+        // gap is visible, it just no longer sets the scale.
+        //
+        // That alone was not enough. The 10 degree excursions in the bench record
+        // were not vibration - they were the sensor sitting perfectly still at a
+        // tilted angle during a tilt test. Quiet, and genuinely 10 degrees off.
+        // No amplitude filter can catch that, because nothing was shaking.
+        //
+        // The principle that does catch it: movement from a baseline is undefined
+        // before that baseline was captured. Plotting it for earlier times
+        // compares the record against a reference that did not yet exist, and
+        // here that record is deliberate bench testing. So deviation starts at
+        // commissioning. Absolute tilt and temperature still cover the whole
+        // window - the history is kept, it just stops setting the scale of a
+        // number it cannot describe.
+        $commissionedAt = isset($baseline['captured_at'])
+            ? \Illuminate\Support\Carbon::parse($baseline['captured_at'])
+            : null;
+
         $rows = DB::select(<<<SQL
-            SELECT time_bucket('{$bucket}', time) AS t,
-                   avg(value) FILTER (WHERE channel_key = 'incl_tilt')   AS tilt,
-                   avg(value) FILTER (WHERE channel_key = 'incl_roll')   AS roll,
-                   avg(value) FILTER (WHERE channel_key = 'incl_pitch')  AS pitch,
-                   avg(value) FILTER (WHERE channel_key = 'temperature') AS temperature,
-                   max(value) FILTER (WHERE channel_key = 'accel_amplitude_x') AS disturbance
-            FROM measurements
-            WHERE sensor_id = ? AND time > now() - (? || ' days')::interval
+            WITH m AS (
+                SELECT time_bucket('1 minute', time) AS b,
+                       avg(value) FILTER (WHERE channel_key = 'incl_tilt')   AS tilt,
+                       avg(value) FILTER (WHERE channel_key = 'incl_roll')   AS roll,
+                       avg(value) FILTER (WHERE channel_key = 'incl_pitch')  AS pitch,
+                       avg(value) FILTER (WHERE channel_key = 'temperature') AS temp,
+                       max(value) FILTER (WHERE channel_key = 'accel_amplitude_x') AS amp
+                FROM measurements
+                WHERE sensor_id = ? AND time > now() - (? || ' days')::interval
+                GROUP BY b
+            ), q AS (
+                SELECT *, (amp IS NULL OR amp < 0.02) AS quiet FROM m
+            )
+            SELECT time_bucket('{$bucket}', b) AS t,
+                   avg(tilt)  FILTER (WHERE quiet) AS tilt,
+                   -- Filtered by minute, not by bucket. Excluding whole buckets
+                   -- that straddle the commissioning instant threw away every
+                   -- point for the first hour after capture, which left an empty
+                   -- chart - a different way of showing nothing.
+                   avg(tilt)  FILTER (WHERE quiet AND b >= ?) AS tilt_commissioned,
+                   avg(roll)  FILTER (WHERE quiet) AS roll,
+                   avg(pitch) FILTER (WHERE quiet) AS pitch,
+                   -- Temperature is deliberately NOT filtered. It stays a true
+                   -- reading of the chip while the sensor is handled, and the
+                   -- whole point of the second axis is to compare movement
+                   -- against it - a trace full of holes would defeat that.
+                   avg(temp) AS temperature,
+                   count(*) FILTER (WHERE NOT quiet) AS disturbed_minutes,
+                   count(*) AS total_minutes
+            FROM q
+            WHERE tilt IS NOT NULL OR temp IS NOT NULL
             GROUP BY t ORDER BY t
-        SQL, [$sensorId, $days]);
+        SQL, [$sensorId, $days, $commissionedAt?->toDateTimeString() ?? '-infinity']);
 
         $baselineTilt = (float) ($baseline['tilt'] ?? 0);
 
         return [
             'bucket' => $bucket,
+            'bucket_seconds' => $bucketSeconds,
+            'commissioned_at' => $commissionedAt?->toIso8601String(),
             'points' => array_map(fn ($r) => [
                 't' => \Illuminate\Support\Carbon::parse($r->t)->valueOf(),
                 'tilt' => $r->tilt === null ? null : round((float) $r->tilt, 4),
@@ -101,12 +156,18 @@ class TiltController extends Controller
                 'pitch' => $r->pitch === null ? null : round((float) $r->pitch, 4),
                 'temperature' => $r->temperature === null ? null : round((float) $r->temperature, 2),
                 // Deviation is what an operator reads; absolute tilt is context.
-                'deviation' => $r->tilt === null || $baseline === null
+                'deviation' => $r->tilt_commissioned === null || $baseline === null
                     ? null
-                    : round((float) $r->tilt - $baselineTilt, 4),
+                    : round((float) $r->tilt_commissioned - $baselineTilt, 4),
+                // True where the bucket predates commissioning entirely. Drives a
+                // shaded band, so the excluded history is visible as a period
+                // rather than silently absent.
+                'pre_commissioning' => $commissionedAt !== null && $r->tilt_commissioned === null,
                 // Carried so a step in the trace can be told from settlement.
                 // Somebody leaning on the silo moves the reading too.
-                'disturbed' => $r->disturbance !== null && (float) $r->disturbance > 0.05,
+                'disturbed' => (int) $r->disturbed_minutes > 0,
+                'disturbed_minutes' => (int) $r->disturbed_minutes,
+                'total_minutes' => (int) $r->total_minutes,
             ], $rows),
         ];
     }

@@ -101,6 +101,20 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
     : Math.abs(movement) >= 0.5 ? 'warn'
     : 'ok'
 
+  const bucketMs = sensor.series.bucket_seconds * 1000
+
+  // Contiguous runs of disturbed buckets, collapsed into bands. One band per
+  // bucket would draw hundreds of hairlines on a 90-day view.
+  const bands: Array<[number, number, string]> = []
+  let run: [number, number, string] | null = null
+  for (const p of points) {
+    const kind = p.pre_commissioning ? 'pre' : p.disturbed ? 'disturbed' : ''
+    if (!kind) { if (run) { bands.push(run); run = null } ; continue }
+    if (run && run[2] === kind) run[1] = p.t + bucketMs
+    else { if (run) bands.push(run); run = [p.t, p.t + bucketMs, kind] }
+  }
+  if (run) bands.push(run)
+
   const option = {
     animation: false,
     grid: { left: 58, right: 58, top: 24, bottom: 30 },
@@ -148,7 +162,27 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
         type: 'line',
         showSymbol: false,
         lineStyle: { width: 1.8, color: '#a371f7' },
-        data: points.map((p) => [p.t, p.deviation ?? p.tilt]),
+        data: points.map((p) => [p.t, baseline ? p.deviation : p.tilt]),
+        // Excluded buckets break the line rather than being bridged across.
+        // Connecting them would draw a straight segment through time nobody
+        // measured and make it look like data.
+        connectNulls: false,
+        markArea: {
+          silent: true,
+          itemStyle: { opacity: 1 },
+          data: bands.map(([from, to, kind]) => [
+            {
+              xAxis: from,
+              itemStyle: {
+                color: kind === 'pre' ? 'rgba(109,127,144,0.10)' : 'rgba(240,136,62,0.12)',
+              },
+              label: {
+                show: false,
+              },
+            },
+            { xAxis: to },
+          ]),
+        },
         markLine: baseline
           ? {
               silent: true,
@@ -170,7 +204,8 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
     ],
   }
 
-  const disturbed = points.filter((p) => p.disturbed).length
+  const disturbed = points.filter((p) => p.disturbed && !p.pre_commissioning).length
+  const plotted = points.filter((p) => p.deviation !== null).length
 
   return (
     <section className="space-y-4">
@@ -243,11 +278,21 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
                   {sensor.series.bucket} averages
                 </span>
               </h3>
-              {disturbed > 0 && (
-                <span className="text-[11px] text-warning">
-                  {disturbed} interval(s) show the sensor being disturbed
-                </span>
-              )}
+              <span className="flex flex-wrap items-center gap-3 text-[11px]">
+                {baseline && (
+                  <span className="text-ink-dim">
+                    <span className="mr-1 inline-block h-2 w-3 rounded-sm bg-[#6d7f90]/25 align-middle" />
+                    before commissioning — movement undefined
+                  </span>
+                )}
+                {disturbed > 0 && (
+                  <span className="text-warning">
+                    <span className="mr-1 inline-block h-2 w-3 rounded-sm bg-[#f0883e]/30 align-middle" />
+                    {disturbed} interval(s) discarded — sensor handled
+                  </span>
+                )}
+                <span className="text-ink-dim">{plotted} point(s) plotted</span>
+              </span>
             </header>
             <div className="px-1 pb-1 pt-2">
               <ReactECharts option={option} style={{ height: 300 }} notMerge lazyUpdate />

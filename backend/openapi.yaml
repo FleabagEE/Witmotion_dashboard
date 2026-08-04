@@ -644,6 +644,17 @@ components:
             bucket:
               type: string
               description: Chosen from the window - a year of five-minute buckets is unreadable.
+            bucket_seconds:
+              type: integer
+              description: Bucket width, so a client can draw a band the right size.
+            commissioned_at:
+              oneOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+              description: |
+                When the baseline was captured. Movement is undefined before it,
+                so points earlier than this carry a null deviation.
             points:
               type: array
               items: { $ref: "#/components/schemas/TiltPoint" }
@@ -705,19 +716,42 @@ components:
 
     TiltPoint:
       type: object
-      required: [t, tilt, temperature, deviation, disturbed]
+      required: [t, tilt, temperature, deviation, disturbed, disturbed_minutes, total_minutes, pre_commissioning]
       properties:
         t: { type: integer }
-        tilt: { type: [number, "null"] }
+        tilt:
+          type: [number, "null"]
+          description: |
+            Absolute tilt from vertical, averaged over the quiet minutes of the
+            bucket. Present for the whole window, including before commissioning.
         roll: { type: [number, "null"] }
         pitch: { type: [number, "null"] }
-        temperature: { type: [number, "null"] }
-        deviation: { type: [number, "null"] }
+        temperature:
+          type: [number, "null"]
+          description: |
+            Deliberately NOT filtered for disturbance. It stays a true reading of
+            the chip while the sensor is handled, and the second axis exists to
+            compare movement against it - a trace full of holes would defeat that.
+        deviation:
+          type: [number, "null"]
+          description: |
+            Movement from the baseline. Null before commissioning and for buckets
+            with no quiet minutes, so the plotted line breaks rather than being
+            bridged across time nobody measured.
         disturbed:
           type: boolean
           description: |
             The sensor was handled in this interval. A step in the trace here is
             not settlement.
+        disturbed_minutes: { type: integer }
+        total_minutes: { type: integer }
+        pre_commissioning:
+          type: boolean
+          description: |
+            The bucket predates the baseline, so movement is undefined for it.
+            Returned rather than dropped so a client can shade the period: the
+            excluded history stays visible without setting the scale of an axis
+            that has to resolve hundredths of a degree.
 
     Envelope:
       type: object

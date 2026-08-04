@@ -294,6 +294,11 @@ export interface TiltPoint {
   deviation: number | null
   /** The sensor was handled in this interval - a step here is not settlement. */
   disturbed: boolean
+  /** Minutes inside this bucket discarded because the sensor was handled. */
+  disturbed_minutes: number
+  total_minutes: number
+  /** Bucket predates the commissioning baseline, so movement is undefined for it. */
+  pre_commissioning: boolean
 }
 
 export interface TiltSensor {
@@ -302,7 +307,13 @@ export interface TiltSensor {
   baseline: TiltBaseline | null
   deviation: TiltDeviation | null
   thermal_model: TiltThermalModel | null
-  series: { bucket: string; points: TiltPoint[] }
+  series: {
+    bucket: string
+    bucket_seconds: number
+    /** When the baseline was captured. Movement is undefined before it. */
+    commissioned_at: string | null
+    points: TiltPoint[]
+  }
 }
 
 export interface TiltResponse {
