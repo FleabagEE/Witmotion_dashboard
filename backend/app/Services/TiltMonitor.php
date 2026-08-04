@@ -142,18 +142,54 @@ class TiltMonitor
      */
     public function deviation(string $sensorId, array $baseline, int $minutes = 60): array
     {
+        // Disturbed minutes are dropped before averaging, not after.
+        //
+        // The first version averaged the window raw, and two minutes of somebody
+        // handling the sensor pulled an hourly mean of 0.008 deg up to 0.646 -
+        // eighty times the real movement, from a disturbance that had ended half
+        // an hour earlier. On a silo that is a person leaning on it moving the
+        // number the alarm reads. The same amp < 0.02 g test that guards the
+        // thermal model guards this.
         $now = DB::selectOne(<<<'SQL'
-            SELECT avg(value) FILTER (WHERE channel_key = 'incl_tilt')   AS tilt,
-                   avg(value) FILTER (WHERE channel_key = 'incl_roll')   AS roll,
-                   avg(value) FILTER (WHERE channel_key = 'incl_pitch')  AS pitch,
-                   avg(value) FILTER (WHERE channel_key = 'temperature') AS temp,
-                   count(*) FILTER (WHERE channel_key = 'incl_tilt')     AS samples
-            FROM measurements
-            WHERE sensor_id = ? AND time > now() - (? || ' minutes')::interval
+            WITH m AS (
+                SELECT time_bucket('1 minute', time) AS b,
+                       avg(value) FILTER (WHERE channel_key = 'incl_tilt')   AS tilt,
+                       avg(value) FILTER (WHERE channel_key = 'incl_roll')   AS roll,
+                       avg(value) FILTER (WHERE channel_key = 'incl_pitch')  AS pitch,
+                       avg(value) FILTER (WHERE channel_key = 'temperature') AS temp,
+                       max(value) FILTER (WHERE channel_key = 'accel_amplitude_x') AS amp,
+                       count(*) FILTER (WHERE channel_key = 'incl_tilt')     AS n
+                FROM measurements
+                WHERE sensor_id = ? AND time > now() - (? || ' minutes')::interval
+                GROUP BY b
+            )
+            SELECT avg(tilt)  FILTER (WHERE quiet) AS tilt,
+                   avg(roll)  FILTER (WHERE quiet) AS roll,
+                   avg(pitch) FILTER (WHERE quiet) AS pitch,
+                   avg(temp)  FILTER (WHERE quiet) AS temp,
+                   coalesce(sum(n) FILTER (WHERE quiet), 0)     AS samples,
+                   count(*)   FILTER (WHERE NOT quiet)          AS disturbed_minutes,
+                   count(*)                                     AS total_minutes
+            FROM (SELECT *, (amp IS NULL OR amp < 0.02) AS quiet FROM m WHERE tilt IS NOT NULL) q
         SQL, [$sensorId, $minutes]);
 
         if (! $now || $now->samples < 10) {
-            return ['available' => false, 'reason' => 'not enough recent data'];
+            // Distinguished, because "the sensor is being worked on" and "the
+            // sensor is dead" call for different responses and both used to
+            // arrive here as the same sentence.
+            $wasDisturbed = $now && $now->disturbed_minutes > 0;
+
+            return [
+                'available' => false,
+                'reason' => $wasDisturbed
+                    ? sprintf(
+                        'sensor disturbed for %d of the last %d minutes - no quiet data to average',
+                        $now->disturbed_minutes,
+                        $minutes,
+                    )
+                    : 'not enough recent data',
+                'disturbed_minutes' => $wasDisturbed ? (int) $now->disturbed_minutes : 0,
+            ];
         }
 
         $rawDeviation = (float) $now->tilt - (float) ($baseline['tilt'] ?? 0);
@@ -173,6 +209,11 @@ class TiltMonitor
         return [
             'available' => true,
             'samples' => (int) $now->samples,
+            // Reported so an operator can tell a quiet hour from one that was
+            // mostly thrown away. A deviation averaged over three surviving
+            // minutes deserves less trust than one averaged over sixty.
+            'disturbed_minutes' => (int) $now->disturbed_minutes,
+            'window_minutes' => $minutes,
             'tilt_now' => round((float) $now->tilt, 4),
             'roll_now' => round((float) $now->roll, 4),
             'pitch_now' => round((float) $now->pitch, 4),

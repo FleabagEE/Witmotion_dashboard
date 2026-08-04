@@ -57,17 +57,18 @@ function Figure({
 
 function NotCommissioned({ sensorId }: { sensorId: string }) {
   return (
-    <div className="rounded-xl border border-warning/40 bg-warning/5 p-5">
+    <div className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-4">
       <h3 className="text-sm font-semibold text-warning">
-        {sensorId} has no baseline — settlement is not being monitored
+        {sensorId} has no baseline — movement is not being measured
       </h3>
-      <p className="mt-2 max-w-2xl text-xs leading-relaxed text-ink-dim">
-        Movement is measured against the structure's orientation at commissioning.
-        Without that reference there is nothing to compare against, and adopting
-        whatever it reads today would silently define its current lean as correct.
+      <p className="mt-2 max-w-3xl text-xs leading-relaxed text-ink-dim">
+        The readings below are live and correct; what is missing is the reference
+        to compare them against. Adopting whatever the sensor reads today would
+        silently define its current lean as correct, so the deviation figures stay
+        blank until somebody captures the reference deliberately.
       </p>
       <p className="mt-3 text-xs text-ink-dim">
-        Mount the sensor, leave it undisturbed for an hour, then capture the reference:
+        Mount the sensor, leave it undisturbed for an hour, then:
       </p>
       <pre className="mt-2 overflow-x-auto rounded bg-bg px-3 py-2 text-[11px] text-ink-dim">
 php artisan tilt:baseline capture
@@ -81,6 +82,17 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
   const deviation = sensor.deviation
   const thermal = sensor.thermal_model
   const points = sensor.series.points
+
+  const withTilt = points.filter((p) => p.tilt !== null)
+  const withTemp = points.filter((p) => p.temperature !== null)
+
+  // Prefer the disturbance-filtered figures, so tilt, baseline and movement
+  // reconcile. The chart buckets are the fallback for an uncommissioned sensor,
+  // where there is no deviation to read them from.
+  const latestTilt = deviation?.tilt_now
+    ?? (withTilt.length ? withTilt[withTilt.length - 1].tilt : null)
+  const latestTemp = deviation?.temperature_now
+    ?? (withTemp.length ? withTemp[withTemp.length - 1].temperature : null)
 
   const movement = deviation?.corrected_deviation ?? null
   const tone = movement === null
@@ -99,7 +111,7 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
       textStyle: { color: '#e6edf3', fontSize: 11 },
     },
     legend: {
-      data: ['Movement', 'Temperature'],
+      data: [baseline ? 'Movement' : 'Tilt', 'Temperature'],
       textStyle: { color: '#6d7f90', fontSize: 10 },
       top: 0,
     },
@@ -132,7 +144,7 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
     ],
     series: [
       {
-        name: 'Movement',
+        name: baseline ? 'Movement' : 'Tilt',
         type: 'line',
         showSymbol: false,
         lineStyle: { width: 1.8, color: '#a371f7' },
@@ -172,31 +184,37 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
         {!baseline && <Pill tone="warn">no baseline</Pill>}
       </div>
 
-      {!baseline ? (
-        <NotCommissioned sensorId={sensor.sensor_id} />
-      ) : (
-        <>
+      {!baseline && <NotCommissioned sensorId={sensor.sensor_id} />}
+
+      <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Figure
-              label="Movement from baseline"
+              label={baseline ? 'Movement from baseline' : 'Movement'}
               value={movement === null ? '—' : (movement >= 0 ? '+' : '') + movement.toFixed(4)}
               unit="°"
               tone={tone}
               hint={
-                deviation?.compensated
-                  ? 'temperature removed'
-                  : 'uncompensated — some of this may be temperature'
+                !baseline
+                  ? 'needs a baseline'
+                  : deviation?.disturbed_minutes
+                    // A figure averaged over the few quiet minutes of a busy hour
+                    // is worth less than one averaged over a still one, and the
+                    // number alone does not say which it is.
+                    ? `${deviation.disturbed_minutes} of ${deviation.window_minutes} min discarded — sensor was handled`
+                    : deviation?.compensated
+                      ? 'temperature removed'
+                      : 'uncompensated — some of this may be temperature'
               }
             />
             <Figure
-              label="Raw deviation"
-              value={
-                deviation?.raw_deviation === undefined
-                  ? '—'
-                  : (deviation.raw_deviation >= 0 ? '+' : '') + deviation.raw_deviation.toFixed(4)
-              }
+              label="Current tilt"
+              value={latestTilt === null ? '—' : latestTilt.toFixed(4)}
               unit="°"
-              hint="before temperature is accounted for"
+              hint={
+                baseline
+                  ? `baseline ${baseline.tilt?.toFixed(4)}° — quiet samples only`
+                  : 'from vertical'
+              }
             />
             <Figure
               label="Explained by temperature"
@@ -211,16 +229,16 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
             />
             <Figure
               label="Current temperature"
-              value={deviation?.temperature_now?.toFixed(2) ?? '—'}
+              value={latestTemp === null ? '—' : latestTemp.toFixed(2)}
               unit="°C"
-              hint={`baseline taken at ${baseline.temp?.toFixed(2) ?? '—'} °C`}
+              hint={baseline ? `baseline taken at ${baseline.temp?.toFixed(2) ?? '—'} °C` : undefined}
             />
           </div>
 
           <div className="rounded-xl border border-line bg-panel">
             <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3">
               <h3 className="text-sm font-semibold">
-                Movement and temperature
+                {baseline ? 'Movement' : 'Tilt'} and temperature
                 <span className="ml-2 text-[11px] font-normal text-ink-dim">
                   {sensor.series.bucket} averages
                 </span>
@@ -239,16 +257,20 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-xl border border-line bg-panel px-4 py-3 text-xs text-ink-dim">
               <div className="mb-2 text-[11px] uppercase tracking-wider">Baseline</div>
-              <div className="space-y-1">
-                <div>captured {new Date(baseline.captured_at).toLocaleString()}</div>
-                <div>
-                  tilt {baseline.tilt?.toFixed(4)}° at {baseline.temp?.toFixed(2)} °C
+              {baseline ? (
+                <div className="space-y-1">
+                  <div>captured {new Date(baseline.captured_at).toLocaleString()}</div>
+                  <div>
+                    tilt {baseline.tilt?.toFixed(4)}° at {baseline.temp?.toFixed(2)} °C
+                  </div>
+                  <div>averaged over {baseline.samples} samples</div>
+                  {baseline.resolution_deg && (
+                    <div>resolution about {baseline.resolution_deg.toFixed(5)}°</div>
+                  )}
                 </div>
-                <div>averaged over {baseline.samples} samples</div>
-                {baseline.resolution_deg && (
-                  <div>resolution about {baseline.resolution_deg.toFixed(5)}°</div>
-                )}
-              </div>
+              ) : (
+                <div>Not captured. Movement cannot be measured until it is.</div>
+              )}
             </div>
 
             <div className="rounded-xl border border-line bg-panel px-4 py-3 text-xs text-ink-dim">
@@ -284,8 +306,7 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
               )}
             </div>
           </div>
-        </>
-      )}
+      </>
     </section>
   )
 }

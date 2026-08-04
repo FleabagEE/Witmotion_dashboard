@@ -654,7 +654,20 @@ components:
       properties:
         available: { type: boolean }
         reason: { type: string }
-        samples: { type: integer }
+        samples:
+          type: integer
+          description: Samples that survived the disturbance filter, not samples recorded.
+        disturbed_minutes:
+          type: integer
+          description: |
+            Minutes of the window discarded because the sensor was being handled.
+            Averaged in, two such minutes moved an hourly deviation from 0.008 to
+            0.646 degrees, so they are dropped - and counted here, because a
+            deviation averaged over three surviving minutes deserves less trust
+            than one averaged over sixty.
+        window_minutes:
+          type: integer
+          description: The averaging window the deviation was taken over.
         tilt_now: { type: number }
         temperature_now: { type: number }
         raw_deviation: { type: number }

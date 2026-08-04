@@ -273,6 +273,9 @@ export interface TiltDeviation {
   available: boolean
   reason?: string
   samples: number
+  /** Minutes of the averaging window thrown away because the sensor was handled. */
+  disturbed_minutes: number
+  window_minutes: number
   tilt_now: number
   temperature_now: number
   raw_deviation: number
