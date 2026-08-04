@@ -98,6 +98,12 @@ const CARDS: CardSpec[] = [
  * interpolates nothing.
  */
 const WINDOWS = [
+  // Short windows for watching a single tap or knock land. The refetch is
+  // capped at 500 ms rather than matched to the window: polling faster than the
+  // acquisition rate re-fetches the same samples and costs a round trip to
+  // redraw an identical chart.
+  { label: '2 sec', seconds: 2, points: 200, refetch: 500 },
+  { label: '5 sec', seconds: 5, points: 300, refetch: 500 },
   { label: '1 min', seconds: 60, points: 500, refetch: 1000 },
   { label: '5 min', seconds: 300, points: 600, refetch: 1000 },
   { label: '15 min', seconds: 900, points: 600, refetch: 2000 },
@@ -109,7 +115,11 @@ const WINDOWS = [
 const ALL_CHANNELS = CARDS.flatMap((c) => c.traces.map((t) => t.key))
 
 export function Live() {
-  const [windowIndex, setWindowIndex] = useState(0)
+  // 1 min, not the new 2 sec at index 0. Adding shorter windows must not
+  // change what the page opens on.
+  const [windowIndex, setWindowIndex] = useState(
+    WINDOWS.findIndex((w) => w.label === '1 min'),
+  )
   const [sensorId, setSensorId] = useState<string | null>(null)
   const active = WINDOWS[windowIndex]
 
