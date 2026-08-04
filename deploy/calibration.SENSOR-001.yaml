@@ -1,0 +1,53 @@
+# Per-axis accelerometer calibration.
+#
+# Applied as true = (measured - offset) / gain. Absent means identity, so
+# deleting this file returns the appliance to raw readings.
+#
+# PRODUCED BY A THREE-POSITION PROCEDURE, NOT THE USUAL SIX
+# --------------------------------------------------------
+#
+# The WTVB01-485 reports the magnitude of each acceleration component and not
+# its sign (see docs/known-limitations.md), which makes the standard six-position
+# ellipsoid fit impossible: z-up and z-down return the same vector, so the solve
+# has no orientation information and cannot separate gain from offset.
+#
+# What unsigned readings do still allow is simpler. Stand one axis along gravity
+# and its reading IS its gain, because the true value is 1 g and up-versus-down
+# does not matter. Three placements, one per axis.
+#
+# The offset is therefore not fitted and is left at zero. It was measured
+# separately at -0.00025 g by comparing the two opposed Z positions, which is
+# below the resolution of anything this instrument is used for.
+#
+# Measured 2026-08-04 on the bench, sensor undisturbed and settled in each
+# position (the device filters with a ~9 s time constant; each reading was taken
+# after 45 s and confirmed steady to within 0.00002 g).
+#
+#   axis   placed along gravity   gain      error
+#   X      adjacent edge          0.99756   -0.24%
+#   Y      side edge              1.00586   +0.59%
+#   Z      flat on the table      0.96240   -3.76%
+#
+# The 4.35% spread between axes is the point of doing this per-axis. A single
+# global correction would have left Z 3.8% low while over-correcting Y.
+#
+# This does not change any tilt angle: those normalise the vector, so a gain
+# error largely cancels. What it fixes is |a|, which should read 1.000 g at rest
+# and is the best single indicator that a sensor is healthy.
+
+sensors:
+  SENSOR-001:
+    note: >-
+      Three-position bench calibration, 2026-08-04. Six-position is impossible on
+      this model because acceleration is reported unsigned. Offset not fitted;
+      measured at -0.00025 g and treated as zero.
+    axes:
+      accel_x:
+        gain: 0.99756
+        offset: 0.0
+      accel_y:
+        gain: 1.00586
+        offset: 0.0
+      accel_z:
+        gain: 0.96240
+        offset: 0.0

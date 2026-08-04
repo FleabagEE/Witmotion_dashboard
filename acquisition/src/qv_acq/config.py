@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .calibration import IDENTITY, SensorCalibration
 from .engine import BreakerConfig, RetryConfig, SensorBinding
 from .profiles import loader
 
@@ -82,7 +83,10 @@ class SensorConfig(BaseModel):
                 raise ValueError(f"poll_hz for {key} must be positive")
         return value
 
-    def to_binding(self) -> SensorBinding:
+    def to_binding(
+        self,
+        calibrations: dict[str, "SensorCalibration"] | None = None,
+    ) -> SensorBinding:
         profile = loader.get(self.model)
         if not profile.is_trustworthy():
             # Refusing here rather than at first alarm: a profile that is not
@@ -98,6 +102,12 @@ class SensorConfig(BaseModel):
             slave_id=self.slave_id,
             groups=tuple(self.groups) if self.groups else None,
             poll_hz=dict(self.poll_hz),
+            # Identity when no calibration was fitted for this unit, so an
+            # appliance never applies a correction nobody chose. This argument
+            # existed on the binding from the start and nothing ever passed it:
+            # a calibration file could be written, validated and installed, and
+            # the readings would pass through untouched.
+            calibration=(calibrations or {}).get(self.sensor_id, IDENTITY),
         )
 
 

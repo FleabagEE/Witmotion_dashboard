@@ -10,6 +10,7 @@ import { SensorDetail } from './pages/SensorDetail'
 import { Signal } from './pages/Signal'
 import { Kiosk } from './pages/Kiosk'
 import { Alarms } from './pages/Alarms'
+import { Thresholds } from './pages/Thresholds'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
@@ -17,12 +18,17 @@ const queryClient = new QueryClient({
 
 function Nav({ user, onSignOut }: { user: CurrentUser; onSignOut: () => void }) {
   const { pathname } = useLocation()
+
+  // Thresholds are visible to everyone who can read - an operator who cannot
+  // see the limit cannot judge whether an alarm matters. The page itself
+  // decides what is editable, and the server decides again.
   const links = [
     { to: '/', label: 'Movement' },
     { to: '/live', label: 'Live' },
     { to: '/system', label: 'System' },
     { to: '/signal', label: 'Signal' },
     { to: '/alarms', label: 'Alarms' },
+    { to: '/thresholds', label: 'Thresholds' },
   ]
 
   return (
@@ -111,6 +117,7 @@ export default function App() {
             <Route path="/signal" element={<Signal />} />
             <Route path="/kiosk" element={<Kiosk />} />
             <Route path="/alarms" element={<Alarms user={user} />} />
+            <Route path="/thresholds" element={<Thresholds user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

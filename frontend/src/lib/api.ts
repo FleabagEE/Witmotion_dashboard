@@ -76,6 +76,28 @@ export const api = {
   tilt: (days = 7) => request<TiltResponse>(`/tilt?days=${days}`),
   alarms: (unacknowledgedOnly = false) =>
     request<{ data: AlarmRow[] }>(`/alarms${unacknowledgedOnly ? '?unacknowledged_only=1' : ''}`),
+  alarmDefinitions: () => request<{ data: AlarmDefinitionRow[] }>('/alarm-definitions'),
+  updateThreshold: (id: number, body: ThresholdUpdate) =>
+    request<{ data: AlarmDefinitionRow; confirmation_cleared: boolean }>(
+      `/alarm-definitions/${id}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+  confirmThreshold: (id: number, body: { confirmed_by: string; reference: string; note?: string }) =>
+    request<{ data: AlarmDefinitionRow }>(`/alarm-definitions/${id}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  users: () => request<{ data: ManagedUser[] }>('/users'),
+  roles: () => request<{ data: { role: string; abilities: string[] }[] }>('/roles'),
+  createUser: (body: { name: string; email: string; role: string; password: string }) =>
+    request<{ data: ManagedUser }>('/users', { method: 'POST', body: JSON.stringify(body) }),
+  updateUser: (id: number, body: { name?: string; role?: string; active?: boolean }) =>
+    request<{ data: ManagedUser }>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  resetPassword: (id: number, password: string) =>
+    request<{ data: ManagedUser; sessions_revoked: number }>(`/users/${id}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
   acknowledge: (id: number, note: string) =>
     request<unknown>(`/alarms/${id}/acknowledge`, {
       method: 'POST',
@@ -337,4 +359,53 @@ export interface TiltResponse {
   generated_at: string
   window_days: number | string
   sensors: TiltSensor[]
+}
+
+export interface AlarmDefinitionRow {
+  id: number
+  key: string
+  name: string
+  sensor_id: string | null
+  channel_key: string | null
+  condition_type: string
+  unit: string | null
+  advisory_at: number | null
+  warning_at: number | null
+  critical_at: number | null
+  hysteresis: number | null
+  persistence_seconds: number | null
+  clear_seconds: number | null
+  debounce_seconds: number | null
+  latching: boolean | null
+  enabled: boolean
+  thresholds_confirmed_by: string | null
+  thresholds_confirmed_at: string | null
+  thresholds_reference: string | null
+  /** False means alarms from this definition are shown and never sent. */
+  actionable: boolean
+}
+
+export interface ThresholdUpdate {
+  advisory_at?: number | null
+  warning_at?: number | null
+  critical_at?: number | null
+  hysteresis?: number
+  persistence_seconds?: number
+  clear_seconds?: number
+  debounce_seconds?: number
+  latching?: boolean
+  enabled?: boolean
+  /** Required. Recorded in the audit trail alongside the old and new values. */
+  reason: string
+}
+
+export interface ManagedUser {
+  id: number
+  name: string
+  email: string
+  role: string
+  abilities: string[]
+  active: boolean
+  last_login_at: string | null
+  created_at: string | null
 }

@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import calibration
 from .config import DEFAULT_CONFIG_PATH, ApplianceConfig
 from .engine import AcquisitionEngine
 from .throughput import MAX_SUSTAINED_UTILISATION, bus_demand
@@ -51,6 +52,16 @@ class AcquisitionService:
             self.live.start()
             engine_sink = TeeSink(self.sink, self.live)
 
+        # Loaded once at start. A missing file is normal and means identity, so
+        # an appliance with no calibration reports exactly what the sensor said.
+        calibrations = calibration.load()
+        for sensor_id, fitted in calibrations.items():
+            log.info(
+                "calibration for %s: %s",
+                sensor_id,
+                {axis: round(cal.gain, 5) for axis, cal in fitted.axes.items()},
+            )
+
         self.engine = AcquisitionEngine(config.appliance_id, engine_sink)
         self._started = time.monotonic()
         self._stopping = False
@@ -61,7 +72,7 @@ class AcquisitionService:
                 adapter_id=bus.adapter_id,
                 port=str(bus.port),
                 baud=bus.baud,
-                sensors=[sensor.to_binding() for sensor in bus.sensors],
+                sensors=[sensor.to_binding(calibrations) for sensor in bus.sensors],
                 timeout=bus.timeout,
                 retry=bus.retry(),
                 breaker=bus.breaker(),
@@ -211,8 +222,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         try:
+            calibrations = calibration.load()
             bindings = [
-                (bus, [sensor.to_binding() for sensor in bus.sensors])
+                (bus, [sensor.to_binding(calibrations) for sensor in bus.sensors])
                 for bus in config.buses
             ]
         except Exception as exc:  # noqa: BLE001
