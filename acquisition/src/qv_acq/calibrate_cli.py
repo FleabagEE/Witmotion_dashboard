@@ -58,8 +58,25 @@ def capture(args) -> int:
         print(f"cannot open {args.port}. Stop quakevault-acq first: it owns the port.")
         return 2
 
-    print(f"Hold the sensor still in the '{args.label}' position.")
-    print(f"Averaging for {args.seconds:.0f} s...")
+    print(f"Position: '{args.label}'")
+
+    # Wait for the sensor to settle before averaging anything.
+    #
+    # The device filters its acceleration output with a time constant near 9 s -
+    # measured settling to 99% takes about 44 s after a re-orientation. Averaging
+    # five seconds immediately after setting the sensor down would average a
+    # decay curve, and the spread check does not reliably catch it: mid-settle
+    # drift over five seconds is around 0.0095 g, just under the 0.01 g limit.
+    # That would produce a calibration that looks clean and is wrong.
+    if args.settle > 0:
+        print(f"Settling for {args.settle:.0f} s (the sensor filters with a ~9 s "
+              f"time constant)...")
+        for remaining in range(int(args.settle), 0, -5):
+            print(f"  {remaining:>3d} s", end="\r", flush=True)
+            time.sleep(min(5, remaining))
+        print("       ", end="\r")
+
+    print(f"Averaging for {args.seconds:.0f} s - do not touch it...")
 
     samples: list[tuple[float, float, float]] = []
     deadline = time.monotonic() + args.seconds
@@ -174,7 +191,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("capture", help="average one still position")
     c.add_argument("--label", required=True, choices=POSITIONS)
-    c.add_argument("--seconds", type=float, default=5.0)
+    c.add_argument("--seconds", type=float, default=10.0,
+                   help="averaging window once settled")
+    c.add_argument("--settle", type=float, default=60.0,
+                   help="wait this long after placing the sensor before averaging; "
+                        "the device needs about 44 s to reach 99%% after a move")
     c.add_argument("--max-spread", type=float, default=0.01,
                    help="reject the capture if readings vary more than this (g)")
     c.add_argument("--port", default=DEFAULT_PORT)
