@@ -431,10 +431,28 @@ normally:
 
 A signed device goes from +0.96 to −0.96. This one moved by 0.0005 g.
 
-Three independent confirmations:
+**The decisive test.** The flip above depends on the unit being placed as
+described, so it was repeated in a form that cannot be misplaced: tilt one edge
+up, then the opposite edge, about the same axis.
 
-- **Zero negative values in 7,501,843 acceleration rows** spanning three days
-  that include shaking the unit to 469 mm/s and tilting it past 12°.
+| Position | accel_x | Angle |
+|---|---|---|
+| One edge raised | **+0.5152** | 32.4° |
+| Opposite edge raised | **+0.4307** | 26.6° |
+
+A signed device returns −0.43 for the second. Both are positive. Lifting the
+left edge and lifting the right edge are indistinguishable, which is
+direction-blindness demonstrated rather than inferred. (The magnitudes differ
+only because the two angles were not matched by hand.)
+
+Supporting evidence:
+
+- **Zero negative values in 7,501,843 acceleration rows** spanning three days.
+  This was originally cited as strong proof and is not: registers 0x34–0x36 are
+  quasi-static and barely respond to vibration — during the 469 mm/s shake,
+  accel_x moved 0.001 g, from 0.0967 to 0.0977 — so a mostly-upright sensor
+  would read positive on every axis whether or not it can represent negatives.
+  It corroborates; it does not establish.
 - **`incl_pitch` is negative in 100% of its 854,458 rows**, because it is
   computed from `-ax` and `ax` is never negative. The sign was never measured;
   the formula manufactured it.
