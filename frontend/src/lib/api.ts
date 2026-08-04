@@ -247,6 +247,8 @@ export interface Spectrum {
     min_hz: number
     max_hz: number
     samples: number
+    /** Readings excluded as outside the register's declared range. */
+    rejected_samples: number
     note: string
   } | null
 }

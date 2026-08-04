@@ -274,6 +274,19 @@ export function Signal() {
                 <Stat label="Minimum" value={`${data.device_reported.min_hz} Hz`} />
                 <Stat label="Maximum" value={`${data.device_reported.max_hz} Hz`} />
               </div>
+              {data.device_reported.rejected_samples > 0 && (
+                // Excluding them silently is only half a fix. These figures
+                // used to include readings past the register's declared range -
+                // a 381 Hz maximum the appliance had itself rejected. Filtering
+                // them out without saying so replaces a wrong number with a
+                // quiet one, and a window that is mostly out of range would
+                // then summarise exactly like a clean one.
+                <p className="mt-3 rounded border border-advisory/40 bg-advisory/10 px-2 py-1.5 text-[11px] leading-relaxed text-advisory">
+                  {data.device_reported.rejected_samples} reading(s) in this window fell outside the
+                  register's declared range and are excluded from these figures. Persistent
+                  out-of-range readings point at the scaling or the register map, not the structure.
+                </p>
+              )}
               <p className="mt-3 text-[11px] leading-relaxed text-ink-dim">
                 {data.device_reported.note}
               </p>
