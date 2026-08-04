@@ -361,3 +361,51 @@ strong-motion accelerograph. Modbus RTU request/response is also the wrong
 transport; even at 230400 baud a 3-register read caps near 60-70 Hz, giving about
 30 Hz usable. The day such a sensor is connected, `dsp.process()` works
 immediately.
+
+## Long-term tilt monitoring: thermal drift dominates
+
+The application is two sensors on a concrete silo watching for settlement. The
+quantity of interest is a slow change in tilt over months. The obstacle is not
+resolution - it is that a MEMS accelerometer's zero point moves with
+temperature, and an outdoor structure cycles roughly 20 degC between night and
+afternoon.
+
+Measured on the bench unit over a quiet indoor period: tilt correlated with chip
+temperature at **r = +0.755, slope +0.0457 deg/degC**. Extrapolated to a 20 degC
+swing that is **0.9 degrees of apparent tilt appearing and disappearing every
+day** - larger than the settlement anybody would be looking for. The silo would
+seem to lean each afternoon and recover each night.
+
+That figure came from 10 samples across 0.94 degC and must not be trusted as a
+number. Its order of magnitude is the point.
+
+**The design consequence.** Tilt is never reported against zero. It is reported
+against a baseline captured at commissioning, with a temperature model fitted
+over a learning window, and what is alarmed is the residual - the movement
+temperature does not explain.
+
+```bash
+php artisan tilt:baseline thermal     # fit and inspect the model
+php artisan tilt:baseline capture     # record the commissioning reference
+php artisan tilt:baseline             # current deviation from it
+```
+
+**Two guards, both earned.** The model refuses itself when the temperature range
+is under 2 degC, because a slope fitted indoors cannot be extrapolated to
+February. And it refuses when tilt moved more than 1 degree over the window,
+because that is a re-orientation rather than drift - fitted over a bench day in
+which the sensor was picked up and set down, the model produced a slope of
+-1.22 deg/degC, implying 24 degrees across a normal day, and reported itself
+usable. It was fitting re-orientations against the weather.
+
+**Resolution.** One LSB of the +/-16 g 16-bit accelerometer is about 0.028
+degrees at small angles. Averaging improves that as 1/sqrt(N), so an hour of
+samples reaches roughly 0.0004 degrees - which is why a settlement monitor
+integrates over minutes instead of reacting in milliseconds. The sensor's
+nine-second internal filter, a liability for vibration work, costs nothing here.
+
+**What this cannot separate.** A concrete silo genuinely leans slightly when one
+side is in the sun. That is real movement of the structure, not instrument
+error, and no amount of compensation distinguishes "the silo is warm" from "the
+silo is failing" without the seasonal record. The thermal model is therefore
+reported rather than silently applied.
