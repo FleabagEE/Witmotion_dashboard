@@ -5,6 +5,7 @@ import { api, getToken, setToken, type CurrentUser } from './lib/api'
 import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
 import { Live } from './pages/Live'
+import { Tilt } from './pages/Tilt'
 import { SensorDetail } from './pages/SensorDetail'
 import { Signal } from './pages/Signal'
 import { Kiosk } from './pages/Kiosk'
@@ -17,7 +18,8 @@ const queryClient = new QueryClient({
 function Nav({ user, onSignOut }: { user: CurrentUser; onSignOut: () => void }) {
   const { pathname } = useLocation()
   const links = [
-    { to: '/', label: 'Live' },
+    { to: '/', label: 'Movement' },
+    { to: '/live', label: 'Live' },
     { to: '/system', label: 'System' },
     { to: '/signal', label: 'Signal' },
     { to: '/alarms', label: 'Alarms' },
@@ -100,7 +102,10 @@ export default function App() {
         <Nav user={user} onSignOut={signOut} />
         <main className="mx-auto max-w-[1800px] px-4 py-5">
           <Routes>
-            <Route path="/" element={<Live />} />
+            {/* Movement is the landing page: this appliance monitors settlement.
+                Live stays reachable for commissioning checks. */}
+            <Route path="/" element={<Tilt />} />
+            <Route path="/live" element={<Live />} />
             <Route path="/system" element={<Overview />} />
             <Route path="/sensors/:sensorId" element={<SensorDetail />} />
             <Route path="/signal" element={<Signal />} />

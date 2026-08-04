@@ -73,6 +73,7 @@ export const api = {
       `/spectrum?sensor_id=${encodeURIComponent(sensorId)}` +
         `&channel_key=${encodeURIComponent(channelKey)}&seconds=${seconds}`,
     ),
+  tilt: (days = 7) => request<TiltResponse>(`/tilt?days=${days}`),
   alarms: (unacknowledgedOnly = false) =>
     request<{ data: AlarmRow[] }>(`/alarms${unacknowledgedOnly ? '?unacknowledged_only=1' : ''}`),
   acknowledge: (id: number, note: string) =>
@@ -244,4 +245,65 @@ export interface Spectrum {
     samples: number
     note: string
   } | null
+}
+
+export interface TiltBaseline {
+  tilt: number
+  roll: number
+  pitch: number
+  temp: number
+  samples: number
+  captured_at: string
+  resolution_deg?: number
+}
+
+export interface TiltThermalModel {
+  samples: number
+  correlation: number
+  slope: number
+  temp_range: number
+  tilt_range: number
+  /** True only when the fit can be extrapolated: enough temperature range, and no re-orientation. */
+  significant: boolean
+  /** The window contains a physical move, so no thermal model can be separated from it. */
+  disturbed: boolean
+}
+
+export interface TiltDeviation {
+  available: boolean
+  reason?: string
+  samples: number
+  tilt_now: number
+  temperature_now: number
+  raw_deviation: number
+  /** How much of the movement temperature accounts for. Reported, never hidden. */
+  thermal_component: number
+  corrected_deviation: number
+  compensated: boolean
+}
+
+export interface TiltPoint {
+  t: number
+  tilt: number | null
+  roll: number | null
+  pitch: number | null
+  temperature: number | null
+  deviation: number | null
+  /** The sensor was handled in this interval - a step here is not settlement. */
+  disturbed: boolean
+}
+
+export interface TiltSensor {
+  sensor_id: string
+  verification_status: string | null
+  baseline: TiltBaseline | null
+  deviation: TiltDeviation | null
+  thermal_model: TiltThermalModel | null
+  series: { bucket: string; points: TiltPoint[] }
+}
+
+export interface TiltResponse {
+  generated_at: string
+  window_days: number | string
+  sensors: TiltSensor[]
 }

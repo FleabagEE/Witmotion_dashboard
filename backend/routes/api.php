@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\IngestController;
 use App\Http\Controllers\Api\ReadController;
 use App\Http\Controllers\Api\SpectrumController;
+use App\Http\Controllers\Api\TiltController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -40,6 +41,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/series', [ReadController::class, 'series'])->name('series');
         Route::get('/series/multi', [ReadController::class, 'multiSeries'])->name('series.multi');
         Route::get('/spectrum', SpectrumController::class)->name('spectrum');
+        Route::get('/tilt', TiltController::class)->name('tilt');
         Route::get('/alarms', [ReadController::class, 'alarms'])->name('alarms.index');
     });
 
