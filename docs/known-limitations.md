@@ -325,3 +325,39 @@ least important.
 control (32K down to 64 Hz, each labelled with a measurable frequency band).
 Whether it governs the acceleration filter is unknown. Change it, save it - the
 setting does not persist without SAVE - and repeat the measurement above.
+
+## Signed waveforms need a different sensor
+
+The dashboard shows velocity and displacement as non-negative because that is
+what the device outputs. It is not a display choice.
+
+- **Displacement and velocity are unsigned severity magnitudes.** The manual's
+  formula is `DX(um) = ((DXH << 8) | DXL)` with no sign extension, and across the
+  entire recorded history neither channel has produced a single negative value in
+  any orientation. The device measures how far, not which way.
+- **Acceleration is signed** (`int16`, +/-16 g) but is filtered inside the
+  device: 99 194 samples over three hours changed on 2.0% of adjacent reads and
+  took only 499 distinct values. There is no waveform in it to integrate.
+
+**Anti-aliasing cannot be applied after the fact.** It has to happen before
+sampling. Whatever the device did internally at 256 Hz is already baked into the
+number we read at 9 Hz; no filter reaches back before the ADC.
+
+**The processing chain exists and is tested** - `acquisition/src/qv_acq/dsp.py`.
+Detrend, taper, high-pass, integrate, high-pass, integrate, high-pass, producing
+acceleration, velocity and displacement all oscillating about zero. Verified
+against closed-form answers rather than against itself: 1 g at 10 Hz gives
+156.1 mm/s and 2484 um, which is what `A/(2*pi*f)` and `A/(2*pi*f)^2` require.
+
+It refuses to run on this sensor's data. `refuse_if_not_a_waveform` rejects a
+series where fewer than 5% of adjacent samples differ, and the WTVB01-485
+acceleration register measures 2%. Integrating a quasi-static register produces a
+smooth, plausible, entirely fabricated curve - the most dangerous output a
+structural monitoring appliance could show.
+
+**What a signed waveform requires:** a sensor that streams raw acceleration time
+series - a MEMS accelerometer with a raw output at 100-1000 Hz, or a
+strong-motion accelerograph. Modbus RTU request/response is also the wrong
+transport; even at 230400 baud a 3-register read caps near 60-70 Hz, giving about
+30 Hz usable. The day such a sensor is connected, `dsp.process()` works
+immediately.
