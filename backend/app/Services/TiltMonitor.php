@@ -70,6 +70,53 @@ class TiltMonitor
     private const MAX_TILT_RANGE_DEG = 1.0;
 
     /**
+     * Normalise an acceleration vector, or null if it has no direction.
+     *
+     * @return array{0:float,1:float,2:float}|null
+     */
+    public static function unitVector(float $x, float $y, float $z): ?array
+    {
+        $magnitude = sqrt($x * $x + $y * $y + $z * $z);
+
+        if ($magnitude < 0.5) {
+            // Well below 1 g at rest: a missing axis, or the sensor in free
+            // fall, and either way the direction means nothing.
+            return null;
+        }
+
+        return [$x / $magnitude, $y / $magnitude, $z / $magnitude];
+    }
+
+    /**
+     * Angle in degrees between two unit vectors.
+     *
+     * THIS IS THE MEASUREMENT, and `incl_tilt` is not.
+     *
+     * incl_tilt is acos(az/|a|) - the angle between the sensor's Z axis and
+     * gravity. Lying flat on a bench that is a fine description of "how far off
+     * level is it". Bolted to a vertical silo wall it is not, because Z then
+     * points horizontally and the formula becomes blind to an entire axis of
+     * rotation: a silo leaning sideways relative to the sensor rotates it about
+     * its own Z, which leaves az unchanged and incl_tilt reading exactly 90
+     * degrees no matter how far it goes.
+     *
+     * The angle between the current gravity direction and the commissioned one
+     * has no such blind spot. It asks "how far has this sensor rotated from
+     * where it was bolted", which is the question settlement monitoring is
+     * actually asking, and it gives the same answer for every mounting
+     * orientation.
+     *
+     * @param array{0:float,1:float,2:float} $a
+     * @param array{0:float,1:float,2:float} $b
+     */
+    public static function angleBetween(array $a, array $b): float
+    {
+        $dot = $a[0] * $b[0] + $a[1] * $b[1] + $a[2] * $b[2];
+
+        return rad2deg(acos(max(-1.0, min(1.0, $dot))));
+    }
+
+    /**
      * Fit tilt against temperature over a window.
      *
      * @return array{samples:int, correlation:float, slope:float, intercept:float,
@@ -158,6 +205,9 @@ class TiltMonitor
                        avg(value) FILTER (WHERE channel_key = 'incl_pitch')  AS pitch,
                        avg(value) FILTER (WHERE channel_key = 'temperature') AS temp,
                        max(value) FILTER (WHERE channel_key = 'accel_amplitude_x') AS amp,
+                       avg(value) FILTER (WHERE channel_key = 'accel_x')     AS gx,
+                       avg(value) FILTER (WHERE channel_key = 'accel_y')     AS gy,
+                       avg(value) FILTER (WHERE channel_key = 'accel_z')     AS gz,
                        count(*) FILTER (WHERE channel_key = 'incl_tilt')     AS n
                 FROM measurements
                 WHERE sensor_id = ? AND time > now() - (? || ' minutes')::interval
@@ -167,6 +217,9 @@ class TiltMonitor
                    avg(roll)  FILTER (WHERE quiet) AS roll,
                    avg(pitch) FILTER (WHERE quiet) AS pitch,
                    avg(temp)  FILTER (WHERE quiet) AS temp,
+                   avg(gx)    FILTER (WHERE quiet) AS gx,
+                   avg(gy)    FILTER (WHERE quiet) AS gy,
+                   avg(gz)    FILTER (WHERE quiet) AS gz,
                    coalesce(sum(n) FILTER (WHERE quiet), 0)     AS samples,
                    count(*)   FILTER (WHERE NOT quiet)          AS disturbed_minutes,
                    count(*)                                     AS total_minutes
@@ -192,7 +245,20 @@ class TiltMonitor
             ];
         }
 
-        $rawDeviation = (float) $now->tilt - (float) ($baseline['tilt'] ?? 0);
+        // Preferred: the angle the sensor has rotated through since it was
+        // commissioned, which is mounting-independent. Falls back to the
+        // difference in reported tilt for baselines captured before the gravity
+        // vector was stored - those are still usable, just blind on a wall.
+        $baseGravity = isset($baseline['gravity']) ? array_values($baseline['gravity']) : null;
+        $nowGravity = self::unitVector((float) $now->gx, (float) $now->gy, (float) $now->gz);
+
+        if ($baseGravity !== null && $nowGravity !== null) {
+            $rawDeviation = self::angleBetween($nowGravity, $baseGravity);
+            $method = 'gravity_vector';
+        } else {
+            $rawDeviation = (float) $now->tilt - (float) ($baseline['tilt'] ?? 0);
+            $method = 'reported_tilt';
+        }
 
         // Temperature correction, only when the model earned it. Applying a
         // slope fitted across half a degree of indoor variation to a silo in
@@ -208,6 +274,11 @@ class TiltMonitor
 
         return [
             'available' => true,
+            // Which measure produced the movement figure. A 'reported_tilt'
+            // baseline cannot see rotation about the sensor's own Z axis, so on
+            // a wall-mounted unit it under-reports; the page says so rather than
+            // presenting both as the same number.
+            'method' => $method,
             'samples' => (int) $now->samples,
             // Reported so an operator can tell a quiet hour from one that was
             // mostly thrown away. A deviation averaged over three surviving

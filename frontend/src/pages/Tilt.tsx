@@ -226,6 +226,22 @@ function SensorPanel({ sensor }: { sensor: TiltSensor }) {
 
       {!baseline && <NotCommissioned sensorId={sensor.sensor_id} />}
 
+      {deviation?.method === 'reported_tilt' && (
+        <div className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-3">
+          <h3 className="text-sm font-semibold text-warning">
+            Baseline predates gravity-vector referencing
+          </h3>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-ink-dim">
+            Movement is being measured as a change in reported tilt, which is the
+            angle between the sensor's Z axis and gravity. On a unit bolted to a
+            vertical wall that measure is blind to rotation about its own Z — a
+            structure leaning sideways relative to the sensor would not move this
+            number at all. Recapture the baseline to measure the rotation of the
+            gravity vector instead, which has no such blind spot.
+          </p>
+        </div>
+      )}
+
       <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Figure

@@ -273,6 +273,12 @@ export interface TiltDeviation {
   available: boolean
   reason?: string
   samples: number
+  /**
+   * How movement was measured. `gravity_vector` is mounting-independent;
+   * `reported_tilt` cannot see rotation about the sensor's own Z axis and
+   * under-reports on a wall-mounted unit.
+   */
+  method: 'gravity_vector' | 'reported_tilt'
   /** Minutes of the averaging window thrown away because the sensor was handled. */
   disturbed_minutes: number
   window_minutes: number

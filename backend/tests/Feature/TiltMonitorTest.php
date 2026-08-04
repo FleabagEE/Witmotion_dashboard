@@ -51,12 +51,20 @@ class TiltMonitorTest extends TestCase
     private function seedMinute(\Illuminate\Support\Carbon $at, float $tilt, float $temp, float $amplitude): void
     {
         $rows = [];
+        // The raw axes too, consistent with the tilt: gravity at $tilt degrees
+        // from the sensor's Z. Deviation reads these in preference to the
+        // derived angle, so a fixture without them exercises only the fallback.
+        $radians = deg2rad($tilt);
+
         foreach ([
             'incl_tilt' => $tilt,
             'incl_roll' => 0.0,
             'incl_pitch' => -$tilt,
             'temperature' => $temp,
             'accel_amplitude_x' => $amplitude,
+            'accel_x' => sin($radians),
+            'accel_y' => 0.0,
+            'accel_z' => cos($radians),
         ] as $channel => $value) {
             // Ten samples a minute, so a surviving minute clears the ten-sample floor.
             for ($i = 0; $i < 10; $i++) {
@@ -301,5 +309,83 @@ class TiltMonitorTest extends TestCase
         $result = $this->monitor()->resolution(5, 600.0);
 
         $this->assertSame(5, $result['effective_samples']);
+    }
+
+    /**
+     * The failure the silo mounting would have caused.
+     *
+     * Both sensors go on a vertical wall, so their Z axis points horizontally
+     * and incl_tilt sits at 90 degrees. A lean that rotates the sensor about
+     * that horizontal Z leaves az unchanged, so incl_tilt does not move at all -
+     * the instrument would have reported a perfectly stable silo while it went
+     * over sideways.
+     */
+    public function test_a_wall_mounted_sensor_detects_a_sideways_lean(): void
+    {
+        $level = TiltMonitor::unitVector(0.0, -1.0, 0.0);          // Z horizontal
+        $leaned = TiltMonitor::unitVector(0.01745, -0.99985, 0.0); // 1 deg sideways
+
+        // What incl_tilt would have said: nothing changed.
+        $tiltBefore = rad2deg(acos($level[2]));
+        $tiltAfter = rad2deg(acos($leaned[2]));
+        $this->assertEqualsWithDelta(0.0, $tiltAfter - $tiltBefore, 1e-9);
+
+        // What the gravity vector says: it moved one degree.
+        $this->assertEqualsWithDelta(1.0, TiltMonitor::angleBetween($leaned, $level), 0.01);
+    }
+
+    public function test_the_measure_is_the_same_whatever_the_mounting(): void
+    {
+        // The same one-degree rotation, on a bench and on a wall. A settlement
+        // figure that depended on how the box was bolted down would not be
+        // comparable between the mid-height and top sensors.
+        $flat = TiltMonitor::unitVector(0.0, 0.0, 1.0);
+        $flatLeaned = TiltMonitor::unitVector(0.01745, 0.0, 0.99985);
+
+        $wall = TiltMonitor::unitVector(0.0, -1.0, 0.0);
+        $wallLeaned = TiltMonitor::unitVector(0.01745, -0.99985, 0.0);
+
+        $this->assertEqualsWithDelta(
+            TiltMonitor::angleBetween($flatLeaned, $flat),
+            TiltMonitor::angleBetween($wallLeaned, $wall),
+            0.001,
+        );
+    }
+
+    public function test_a_degenerate_vector_has_no_direction(): void
+    {
+        // Free fall, or a dead axis. Normalising it would invent an orientation.
+        $this->assertNull(TiltMonitor::unitVector(0.0, 0.0, 0.0));
+        $this->assertNull(TiltMonitor::unitVector(0.1, 0.1, 0.1));
+    }
+
+    public function test_deviation_uses_the_gravity_vector_when_the_baseline_has_one(): void
+    {
+        $base = now()->subMinutes(20)->startOfMinute();
+        for ($m = 0; $m < 20; $m++) {
+            $this->seedMinute($base->copy()->addMinutes($m), tilt: 0.66, temp: 25.0, amplitude: 0.004);
+        }
+
+        $result = $this->monitor()->deviation('SENSOR-001', [
+            'tilt' => 0.66, 'temp' => 25.0,
+            'gravity' => [0.0, 0.0, 1.0],
+        ]);
+
+        $this->assertSame('gravity_vector', $result['method']);
+    }
+
+    public function test_a_baseline_without_a_gravity_vector_still_works_and_says_so(): void
+    {
+        $base = now()->subMinutes(20)->startOfMinute();
+        for ($m = 0; $m < 20; $m++) {
+            $this->seedMinute($base->copy()->addMinutes($m), tilt: 0.66, temp: 25.0, amplitude: 0.004);
+        }
+
+        // Captured before the vector was stored. Usable, but blind on a wall,
+        // and the caller has to be able to tell.
+        $result = $this->monitor()->deviation('SENSOR-001', ['tilt' => 0.66, 'temp' => 25.0]);
+
+        $this->assertSame('reported_tilt', $result['method']);
+        $this->assertTrue($result['available']);
     }
 }

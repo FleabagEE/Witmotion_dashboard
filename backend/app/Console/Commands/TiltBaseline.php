@@ -106,7 +106,12 @@ class TiltBaseline extends Command
                    avg(value) FILTER (WHERE channel_key = 'incl_pitch')  AS pitch,
                    avg(value) FILTER (WHERE channel_key = 'temperature') AS temp,
                    count(*) FILTER (WHERE channel_key = 'incl_tilt')     AS samples,
-                   max(value) FILTER (WHERE channel_key = 'accel_amplitude_x') AS amp
+                   max(value) FILTER (WHERE channel_key = 'accel_amplitude_x') AS amp,
+                   -- The gravity vector itself, which is what movement is
+                   -- actually measured against. See TiltMonitor::deviation.
+                   avg(value) FILTER (WHERE channel_key = 'accel_x') AS gx,
+                   avg(value) FILTER (WHERE channel_key = 'accel_y') AS gy,
+                   avg(value) FILTER (WHERE channel_key = 'accel_z') AS gz
             FROM measurements
             WHERE sensor_id = ? AND time > now() - (? || ' minutes')::interval
         SQL, [$sensor->sensor_id, $minutes]);
@@ -137,7 +142,20 @@ class TiltBaseline extends Command
         // the sensor's own filter adds rows, not information.
         $resolution = $monitor->resolution((int) $now->samples, $minutes * 60.0);
 
+        $gravity = TiltMonitor::unitVector(
+            (float) $now->gx, (float) $now->gy, (float) $now->gz,
+        );
+
+        if ($gravity === null) {
+            $this->error('The gravity vector is degenerate - accel_x/y/z are missing or zero.');
+
+            return self::FAILURE;
+        }
+
         $baseline = [
+            // The commissioned orientation as a unit vector. Movement is the
+            // angle from this, not the change in any single reported angle.
+            'gravity' => array_map(fn ($c) => round($c, 6), $gravity),
             'tilt' => round((float) $now->tilt, 4),
             'roll' => round((float) $now->roll, 4),
             'pitch' => round((float) $now->pitch, 4),
