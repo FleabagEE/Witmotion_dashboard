@@ -245,6 +245,45 @@ paths:
               schema: { $ref: "#/components/schemas/SpectrumResponse" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/tilt:
+    get:
+      tags: [read]
+      summary: Structure movement against the commissioning baseline
+      description: |
+        Settlement monitoring. Everything is reported against a baseline captured
+        at commissioning rather than against zero: a silo built 0.4 degrees off
+        plumb is fine and stays fine, and the change is what matters.
+
+        Three deviation figures are returned where a naive response would return
+        one - the raw movement, the part temperature accounts for, and the
+        remainder. Reporting only the remainder would hide how much was explained
+        away, and a compensation nobody can inspect is a place for a real signal
+        to disappear.
+
+        `baseline: null` means the sensor has not been commissioned and nothing
+        is being monitored.
+      parameters:
+        - { name: sensor_id, in: query, schema: { type: string } }
+        - name: days
+          in: query
+          description: Window for the series and the thermal fit. Default 7.
+          schema: { type: integer, minimum: 1, maximum: 3650, default: 7 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, window_days, sensors]
+                properties:
+                  generated_at: { type: string }
+                  window_days: { type: [integer, string] }
+                  sensors:
+                    type: array
+                    items: { $ref: "#/components/schemas/TiltSensor" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/v1/alarms:
     get:
       tags: [alarms]
@@ -565,6 +604,107 @@ components:
             notifies.
         actionable: { type: boolean }
         thresholds_confirmed_by: { type: [string, "null"] }
+
+    TiltSensor:
+      type: object
+      required: [sensor_id, baseline, deviation, thermal_model, series]
+      properties:
+        sensor_id: { type: string }
+        verification_status: { type: [string, "null"] }
+        baseline:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [tilt, temp, samples, captured_at]
+              properties:
+                tilt: { type: number }
+                roll: { type: number }
+                pitch: { type: number }
+                temp:
+                  type: number
+                  description: |
+                    The temperature the baseline was taken at. A deviation is
+                    meaningless without it, because the correction is measured
+                    from here.
+                samples: { type: integer }
+                captured_at: { type: string }
+                resolution_deg: { type: number }
+        deviation:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/TiltDeviation"
+        thermal_model:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/TiltThermalModel"
+        series:
+          type: object
+          required: [bucket, points]
+          properties:
+            bucket:
+              type: string
+              description: Chosen from the window - a year of five-minute buckets is unreadable.
+            points:
+              type: array
+              items: { $ref: "#/components/schemas/TiltPoint" }
+
+    TiltDeviation:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        reason: { type: string }
+        samples: { type: integer }
+        tilt_now: { type: number }
+        temperature_now: { type: number }
+        raw_deviation: { type: number }
+        thermal_component:
+          type: number
+          description: |
+            How much of the movement temperature accounts for. Reported rather
+            than silently removed.
+        corrected_deviation:
+          type: number
+          description: The movement temperature does not explain. This is what is alarmed.
+        compensated:
+          type: boolean
+          description: False means no usable thermal model, so the figure is uncorrected.
+
+    TiltThermalModel:
+      type: object
+      required: [samples, correlation, slope, temp_range, tilt_range, significant, disturbed]
+      properties:
+        samples: { type: integer }
+        correlation: { type: number }
+        slope: { type: number, description: Degrees of apparent tilt per degree C. }
+        temp_range: { type: number }
+        tilt_range: { type: number }
+        significant:
+          type: boolean
+          description: |
+            True only when the fit can be extrapolated - at least 2 degC of range
+            and no re-orientation in the window.
+        disturbed:
+          type: boolean
+          description: |
+            Tilt moved more than a degree, so the window contains a physical move
+            and no thermal model can be separated from it.
+
+    TiltPoint:
+      type: object
+      required: [t, tilt, temperature, deviation, disturbed]
+      properties:
+        t: { type: integer }
+        tilt: { type: [number, "null"] }
+        roll: { type: [number, "null"] }
+        pitch: { type: [number, "null"] }
+        temperature: { type: [number, "null"] }
+        deviation: { type: [number, "null"] }
+        disturbed:
+          type: boolean
+          description: |
+            The sensor was handled in this interval. A step in the trace here is
+            not settlement.
 
     Envelope:
       type: object
