@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\IngestController;
 use App\Http\Controllers\Api\ReadController;
 use App\Http\Controllers\Api\SpectrumController;
+use App\Http\Controllers\Api\StructureController;
 use App\Http\Controllers\Api\TiltController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -45,6 +46,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/series/multi', [ReadController::class, 'multiSeries'])->name('series.multi');
         Route::get('/spectrum', SpectrumController::class)->name('spectrum');
         Route::get('/tilt', TiltController::class)->name('tilt');
+        Route::get('/structure', StructureController::class)->name('structure');
         Route::get('/alarms', [ReadController::class, 'alarms'])->name('alarms.index');
 
         // Readable by anyone who can read: an operator who cannot see the

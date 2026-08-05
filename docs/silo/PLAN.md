@@ -50,7 +50,7 @@ Each is a commit. Later phases assume earlier ones.
 |---|---|---|
 | 1 | Multi-sensor data model, bus capacity, provisioning | **done** |
 | 2 | Alarm definitions for all four quantities on all sensors | **done** |
-| 3 | Reference-sensor differencing (what the site did vs what the silo did) | todo |
+| 3 | Reference-sensor differencing (what the site did vs what the silo did) | **done** |
 | 4 | MQTT alarm publication | todo |
 | 5 | State of health per sensor | todo |
 | 6 | Dashboard restructure — multi-sensor, enterprise design | todo |

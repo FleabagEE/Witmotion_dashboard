@@ -417,6 +417,81 @@ paths:
         "200": { description: Recorded }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /api/v1/structure:
+    get:
+      tags: [read]
+      summary: What the structure did, as distinct from what the site did to it
+      description: |
+        A single sensor cannot separate these. A lorry passing, a piling rig two
+        fields away, a seismic event and the silo settling all produce the same
+        thing: a reading that changed.
+
+        Three sensors, one at ground level, tell them apart. `site` is what the
+        reference saw. `structure` is each upper sensor minus the reference.
+        `bending` is top minus mid after both have had the site removed - a
+        rigid rotation tips every sensor by the same angle whatever its height,
+        so only bending tips the top more.
+
+        `site` is reported rather than merely subtracted: a site that shakes is
+        a finding, and a ground reading that grows over months is the ground
+        moving.
+
+        None of these carry direction. The sensor reports unsigned magnitudes,
+        so two sensors leaning opposite ways look like two leaning the same way,
+        and an S-curve reads as ordinary bending.
+      parameters:
+        - { name: minutes, in: query, schema: { type: integer, default: 60, minimum: 5, maximum: 1440 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, available]
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  available:
+                    type: boolean
+                    description: |
+                      False when a sensor lacks a baseline or recent quiet data.
+                      Comparing sensors without baselines would compare their
+                      mountings rather than their movement.
+                  reason: { type: string }
+                  missing:
+                    type: array
+                    items: { type: string }
+                    description: Positions that could not contribute.
+                  window_minutes: { type: integer }
+                  site:
+                    type: [number, "null"]
+                    description: What the ground reference itself moved, in degrees.
+                  reference_available: { type: boolean }
+                  warning:
+                    type: string
+                    description: |
+                      Present when there is no ground reference, in which case
+                      every figure includes whatever the site was doing.
+                  structure:
+                    type: object
+                    description: Movement each upper sensor shows beyond the site.
+                    properties:
+                      top: { type: number }
+                      mid: { type: number }
+                  bending:
+                    type: number
+                    description: Top minus mid. Zero means a rigid rotation.
+                  interpretation:
+                    type: object
+                    required: [shape, summary]
+                    properties:
+                      shape: { type: string, enum: [still, rigid, bending, unexpected] }
+                      summary: { type: string }
+                  positions:
+                    type: object
+                    description: Per-position sensor id, role, baseline and deviation.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/v1/events:
     get:
       tags: [read]
