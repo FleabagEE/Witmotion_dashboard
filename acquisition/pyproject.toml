@@ -14,6 +14,7 @@ qv-acq = "qv_acq.service:main"
 qv-forwarder = "qv_acq.forwarder_service:main"
 qv-probe = "qv_acq.probe:main"
 qv-calibrate = "qv_acq.calibrate_cli:main"
+qv-set-address = "qv_acq.address_cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

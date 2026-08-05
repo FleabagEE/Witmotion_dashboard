@@ -1,5 +1,6 @@
 pyproject.toml
 src/qv_acq/__init__.py
+src/qv_acq/address_cli.py
 src/qv_acq/calibrate_cli.py
 src/qv_acq/calibration.py
 src/qv_acq/client.py
@@ -8,6 +9,7 @@ src/qv_acq/crc.py
 src/qv_acq/decode.py
 src/qv_acq/derive.py
 src/qv_acq/discovery.py
+src/qv_acq/dsp.py
 src/qv_acq/encode.py
 src/qv_acq/engine.py
 src/qv_acq/forwarder.py
@@ -35,15 +37,19 @@ src/qv_acq/simulator/device.py
 src/qv_acq/simulator/rtu.py
 src/qv_acq/simulator/server.py
 src/qv_acq/simulator/signals.py
+tests/test_bus_capacity.py
 tests/test_calibration.py
+tests/test_calibration_wiring.py
 tests/test_core.py
 tests/test_derive.py
 tests/test_discovery.py
+tests/test_dsp.py
 tests/test_engine.py
 tests/test_entry_points.py
 tests/test_forwarder.py
 tests/test_live.py
 tests/test_probe.py
+tests/test_profile_units.py
 tests/test_service.py
 tests/test_simulator.py
 tests/test_spool.py
