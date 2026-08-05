@@ -183,4 +183,50 @@ class AlarmSelfTestTest extends TestCase
         $this->assertStringNotContainsString('[TEST]', (fn () => $this->subject($event))->call($dispatcher));
         $this->assertStringNotContainsString('TEST', (fn () => $this->body($event))->call($dispatcher));
     }
+
+    public function test_deduplication_is_not_reported_as_a_failure(): void
+    {
+        /**
+         * Being deduplicated means this channel carried an identical alarm
+         * minutes ago. That is evidence it works, arrived at by the only route
+         * that could produce it.
+         *
+         * Counting it as a failure made the command announce "a real alarm today
+         * would reach nobody" to an operator who had just watched one arrive -
+         * which teaches people to disbelieve the self-test, and a self-test
+         * nobody believes is worse than none.
+         */
+        $definition = $this->scenario(confirmed: true);
+        NotificationChannel::where('key', 'duty')->update(['dedupe_window_seconds' => 3600]);
+
+        // A delivery already made, as a real alarm would have left behind. The
+        // self-test cannot produce this itself: its own delivery is rolled back
+        // with the event, so it can only ever collide with a genuine one.
+        $sensor = $definition->sensor;
+        DB::table('notification_deliveries')->insert([
+            'notification_channel_id' => NotificationChannel::where('key', 'duty')->value('id'),
+            'dedupe_key' => sprintf('duty:%s:%s:critical', $sensor->id, 'tilt_deviation'),
+            'level' => 'critical',
+            'subject' => 'earlier alarm',
+            'body' => 'earlier alarm',
+            'status' => 'sent',
+            'sent_at' => now()->subMinutes(2),
+            'created_at' => now()->subMinutes(2),
+        ]);
+
+        $this->artisan('alarms:selftest')
+            ->expectsOutputToContain('already carried')
+            ->assertSuccessful();
+    }
+
+    public function test_a_genuinely_blocked_channel_still_fails(): void
+    {
+        // The distinction has to hold in both directions, or the command stops
+        // being able to say anything.
+        $this->scenario(confirmed: false);
+
+        $this->artisan('alarms:selftest')
+            ->expectsOutputToContain('would reach nobody')
+            ->assertFailed();
+    }
 }

@@ -134,6 +134,12 @@ class AlarmsSelfTest extends Command
         }
 
         $sent = 0;
+        // Deduplication is not a fault. It means this channel carried an
+        // identical alarm within its dedupe window - which is evidence that it
+        // works, arrived at by the only route that could produce it. Counting it
+        // as a failure made the command report "a real alarm would reach nobody"
+        // to an operator who had, minutes earlier, watched one arrive.
+        $deduped = 0;
 
         foreach ($results as $result) {
             $status = $result['status'] ?? 'unknown';
@@ -144,6 +150,10 @@ class AlarmsSelfTest extends Command
             if ($status === 'sent') {
                 $sent++;
                 $this->info($line);
+            } elseif ($reason === 'duplicate') {
+                $deduped++;
+                $this->line($line);
+                $this->line('      '.$this->explain($reason));
             } else {
                 $this->warn($line);
                 $this->line('      '.$this->explain($reason));
@@ -160,13 +170,29 @@ class AlarmsSelfTest extends Command
 
         $this->newLine();
 
-        if ($sent === 0) {
+        if ($sent === 0 && $deduped === 0) {
             $this->error('Nothing was delivered. A real alarm today would reach nobody.');
 
             return self::FAILURE;
         }
 
+        if ($sent === 0) {
+            $this->info(sprintf(
+                '%d channel(s) had already carried this alarm within their dedupe window.',
+                $deduped,
+            ));
+            $this->line('  That is the channel working, not failing. Run again later, or');
+            $this->line('  use --level to send at a severity that has not just been sent.');
+
+            return self::SUCCESS;
+        }
+
         $this->info("{$sent} channel(s) delivered. A real alarm would reach somebody.");
+
+        if ($deduped > 0) {
+            $this->line("  {$deduped} more had already carried it inside their dedupe window.");
+        }
+
         $this->line('  No alarm was recorded: the test ran inside a rolled-back transaction.');
 
         return self::SUCCESS;
