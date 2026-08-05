@@ -375,6 +375,8 @@ export interface AlarmDefinitionRow {
   name: string
   sensor_id: string | null
   channel_key: string | null
+  /** Set instead of channel_key when one definition covers every axis. */
+  quantity: string | null
   condition_type: string
   unit: string | null
   advisory_at: number | null

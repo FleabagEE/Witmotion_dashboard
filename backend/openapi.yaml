@@ -1103,6 +1103,12 @@ components:
         name: { type: string }
         sensor_id: { type: [string, "null"] }
         channel_key: { type: [string, "null"] }
+        quantity:
+          type: [string, "null"]
+          description: |
+            Set instead of channel_key when one definition covers every axis of a
+            quantity. The live charts look their threshold lines up by it, so a
+            chart cannot drift away from the number that would actually fire.
         condition_type: { type: string }
         unit: { type: [string, "null"] }
         advisory_at: { type: [number, "null"] }

@@ -163,6 +163,9 @@ class AlarmDefinitionController extends Controller
             'name' => $definition->name,
             'sensor_id' => $definition->sensor?->sensor_id,
             'channel_key' => $definition->channel_key,
+            // Set instead of channel_key when one definition covers every axis;
+            // the live charts look their limits up by it.
+            'quantity' => $definition->quantity,
             'condition_type' => $definition->condition_type,
             'unit' => $definition->unit,
             'advisory_at' => $definition->advisory_at,

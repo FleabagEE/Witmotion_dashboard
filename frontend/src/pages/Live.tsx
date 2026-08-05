@@ -31,6 +31,14 @@ interface CardSpec {
   note?: string
   /** Acceleration only: gravity's static bias would otherwise dominate the axis. */
   offsetRemovable?: boolean
+  /**
+   * The quantity an alarm definition would be scoped to, when one exists.
+   *
+   * Named rather than hard-coding numbers here: the limits live in the database,
+   * an administrator can change them, and a chart drawn from a copy would go
+   * quietly stale the first time somebody did.
+   */
+  quantity?: string
 }
 
 /**
@@ -58,8 +66,15 @@ const CARDS: CardSpec[] = [
     traces: axisTraces('accel_amplitude'),
     decimals: 4,
     note: 'vibration only, gravity excluded',
+    quantity: 'acceleration_amplitude',
   },
-  { title: 'Velocity', unit: 'mm/s', traces: axisTraces('vib_velocity'), decimals: 2 },
+  {
+    title: 'Velocity',
+    unit: 'mm/s',
+    traces: axisTraces('vib_velocity'),
+    decimals: 2,
+    quantity: 'vibration_velocity',
+  },
   { title: 'Displacement', unit: 'µm', traces: axisTraces('vib_displacement'), decimals: 0 },
   { title: 'Dominant frequency', unit: 'Hz', traces: axisTraces('vib_frequency'), decimals: 1 },
   {
@@ -130,6 +145,21 @@ export function Live() {
   // Every card in one request. Splitting it would let each half land at a
   // slightly different moment, which on a chart reads as a skew between cards
   // that is not in the data.
+  // The same definitions the alarm engine judges against, so a line on the
+  // chart cannot drift away from the number that would actually fire.
+  const definitions = useQuery({
+    queryKey: ['alarm-definitions'],
+    queryFn: api.alarmDefinitions,
+    staleTime: 60_000,
+  })
+
+  const limitsFor = (quantity?: string) => {
+    if (!quantity) return null
+    const d = definitions.data?.data.find((x) => x.quantity === quantity && x.enabled)
+    if (!d) return null
+    return { warning: d.warning_at, critical: d.critical_at, confirmed: d.actionable }
+  }
+
   const feed = useQuery({
     queryKey: ['multi', selected, active.seconds],
     queryFn: () => api.multiSeries(selected!, ALL_CHANNELS, active.seconds, active.points),
@@ -262,6 +292,7 @@ export function Live() {
             decimals={card.decimals}
             resolution={resolution}
             error={feedError}
+            limits={limitsFor(card.quantity)}
             note={card.note}
             offsetRemovable={card.offsetRemovable}
           />

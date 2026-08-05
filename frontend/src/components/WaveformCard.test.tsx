@@ -138,3 +138,29 @@ describe('what the card discloses', () => {
     expect(option.yAxis.name).toBe('µm')
   })
 })
+
+describe('WaveformCard threshold lines', () => {
+  const series = { a: [{ t: 1, v: 0.2, lo: null, hi: null }] }
+  const traces = [{ key: 'a', label: 'X', colour: '#58a6ff' }]
+
+  it('renders without limits', () => {
+    const { container } = render(
+      <WaveformCard title="Velocity" unit="mm/s" traces={traces} series={series} />,
+    )
+    expect(container.textContent).toContain('Velocity')
+  })
+
+  it('accepts limits without throwing', () => {
+    // The chart itself is an ECharts canvas and not readable here; what this
+    // guards is that the prop threads through and the option builder does not
+    // fall over on a null threshold, which is the common shape - an advisory
+    // level that nobody set.
+    const { container } = render(
+      <WaveformCard
+        title="Velocity" unit="mm/s" traces={traces} series={series}
+        limits={{ warning: 3, critical: null, confirmed: false }}
+      />,
+    )
+    expect(container.textContent).toContain('Velocity')
+  })
+})

@@ -25,6 +25,7 @@ export function WaveformCard({
   resolution,
   note,
   error,
+  limits,
   offsetRemovable = false,
 }: {
   title: string
@@ -36,6 +37,15 @@ export function WaveformCard({
   note?: string
   /** Request failure, shown in place of the empty-window message. */
   error?: string | null
+  /**
+   * Alarm thresholds for this quantity, drawn on the chart.
+   *
+   * A live trace with no limit on it answers "what is it doing" and not "is that
+   * a lot", which is the question somebody watching actually has. The lines come
+   * from the same definitions the alarm engine judges against, so the chart
+   * cannot drift away from what would actually fire.
+   */
+  limits?: { warning: number | null; critical: number | null; confirmed: boolean } | null
   /**
    * Offer to plot deviation from each trace's mean instead of absolute value.
    *
@@ -122,7 +132,7 @@ export function WaveformCard({
         },
         splitLine: { lineStyle: { color: '#1a232d' } },
       },
-      series: traces.map((t) => ({
+      series: traces.map((t, i) => ({
         name: t.label,
         type: 'line',
         showSymbol: false,
@@ -133,9 +143,37 @@ export function WaveformCard({
           p.t,
           p.v === null ? null : active ? p.v - offsets[t.key] : p.v,
         ]),
+        // Drawn once, on the first trace, or three identical lines would be
+        // stacked on top of each other. Suppressed when the offset is removed:
+        // a limit is an absolute value, and against a deviation trace it would
+        // be in the wrong place by exactly the offset that was subtracted.
+        markLine: i === 0 && limits && !active
+          ? {
+              silent: true,
+              symbol: 'none',
+              precision: decimals,
+              label: {
+                fontSize: 9,
+                color: '#8b98a5',
+                formatter: (p: { name?: string }) => p.name ?? '',
+              },
+              data: [
+                limits.warning !== null && {
+                  yAxis: limits.warning,
+                  name: limits.confirmed ? 'warning' : 'warning (unconfirmed)',
+                  lineStyle: { color: '#d29922', type: 'dashed', width: 1 },
+                },
+                limits.critical !== null && {
+                  yAxis: limits.critical,
+                  name: limits.confirmed ? 'critical' : 'critical (unconfirmed)',
+                  lineStyle: { color: '#f85149', type: 'dashed', width: 1 },
+                },
+              ].filter(Boolean),
+            }
+          : undefined,
       })),
     }),
-    [series, traces, unit, decimals, active, offsets],
+    [series, traces, unit, decimals, active, offsets, limits],
   )
 
   const hasData = traces.some((t) => (series?.[t.key] ?? []).some((p) => p.v !== null))
