@@ -29,8 +29,34 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{serial}=="?*", \
 
 # --- Strategy 2: topology identity (adapters with no serial number) ---
 
-# CH340 on USB port 1-1. Commissioned 2026-07-31.
-# Moving this adapter to another physical port requires updating KERNELS here
-# and the adapter record in the database.
+# CH340 on USB port 1-1. Commissioned 2026-07-31, single-sensor bench setup.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", KERNELS=="1-1", \
   SYMLINK+="quakevault-rs485-a", GROUP="dialout", MODE="0660", TAG+="systemd"
+
+# --- Three-sensor silo installation, commissioned 2026-08-05 ---
+#
+# Each sensor has its own adapter rather than sharing one multi-drop bus, so
+# every adapter carries exactly one device and all three may keep the factory
+# address 0x50. Address collision is a property of shared wires, and there are
+# none here.
+#
+# That makes the physical port the sensor's only identity. These adapters report
+# no serial number - confirmed on 1a86:7523 - so there is nothing else to key on.
+# The aliases are named for the socket, NOT for the sensor's role: which unit is
+# plugged where is configuration, recorded in acquisition.yaml and verified by
+# tapping each sensor at commissioning.
+#
+# Moving an adapter to a different USB socket silently reassigns which sensor
+# the appliance believes it is reading. On a three-sensor installation where one
+# unit is the ground reference, that inverts the interpretation of everything:
+# what the site did would be read as what the silo did. Treat a move as a
+# configuration change and re-run the tap test.
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", KERNELS=="1-1.1", \
+  SYMLINK+="quakevault-rs485-p1", GROUP="dialout", MODE="0660", TAG+="systemd"
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", KERNELS=="1-1.2", \
+  SYMLINK+="quakevault-rs485-p2", GROUP="dialout", MODE="0660", TAG+="systemd"
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", KERNELS=="1-1.4", \
+  SYMLINK+="quakevault-rs485-p4", GROUP="dialout", MODE="0660", TAG+="systemd"

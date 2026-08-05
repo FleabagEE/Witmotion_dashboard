@@ -38,16 +38,19 @@ class FakeBus:
     def close(self) -> None:
         pass
 
-    def read_holding_registers(self, address, count=1, slave=None):
-        if slave in self.present:
+    def read_holding_registers(self, address, count=1, *, device_id=None):
+        # Keyword-only and named as pymodbus 3.14 names it. The first version of
+        # this fake accepted `slave=`, which is what the code was wrongly
+        # passing, so the suite confirmed the bug instead of catching it.
+        if device_id in self.present:
             return FakeResponse()
         return FakeResponse(error=True)
 
-    def write_register(self, address, value, slave=None):
-        self.writes.append((address, value, slave))
+    def write_register(self, address, value, *, device_id=None):
+        self.writes.append((address, value, device_id))
 
         if address == address_cli.ADDRESS_REGISTER and self.write_moves:
-            self.present.discard(slave)
+            self.present.discard(device_id)
             self.present.add(value)
 
         return FakeResponse()
@@ -155,3 +158,42 @@ def test_it_refuses_when_the_stated_current_address_is_wrong(monkeypatch):
 
     assert run(bus, monkeypatch, ["--from", "0x55", "--to", "0x51", "--yes"]) == 1
     assert bus.writes == []
+
+
+def test_a_wrong_call_signature_is_not_reported_as_a_quiet_bus(monkeypatch, capsys):
+    """The bug this file failed to catch the first time.
+
+    pymodbus 3.14 takes ``device_id``. Passing ``slave`` raises TypeError, and
+    the original code caught every exception here - so a bus with a perfectly
+    healthy sensor on it reported "nothing answered" for all 247 addresses, and
+    the next step was somebody checking wiring that was fine.
+
+    A programming error must not be able to masquerade as a hardware finding.
+    """
+    class WrongSignatureBus(FakeBus):
+        def read_holding_registers(self, address, count=1, **kwargs):
+            if "device_id" not in kwargs:
+                raise TypeError("unexpected keyword argument 'slave'")
+            return super().read_holding_registers(address, count, **kwargs)
+
+    bus = WrongSignatureBus({0x50})
+
+    # Sanity: correct usage still works.
+    assert address_cli.responds(bus, 0x50) is True
+
+    class BrokenCaller(FakeBus):
+        def read_holding_registers(self, address, count=1, **kwargs):
+            raise TypeError("unexpected keyword argument 'slave'")
+
+    with pytest.raises(TypeError):
+        address_cli.responds(BrokenCaller({0x50}), 0x50)
+
+
+def test_a_timeout_is_still_treated_as_silence(monkeypatch):
+    # The narrowing must not swallow the legitimate case: a genuinely absent
+    # device raises a communication error and that is silence, not a bug.
+    class SilentBus(FakeBus):
+        def read_holding_registers(self, address, count=1, **kwargs):
+            raise ConnectionError("no response within timeout")
+
+    assert address_cli.responds(SilentBus(set()), 0x50) is False

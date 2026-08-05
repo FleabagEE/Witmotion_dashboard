@@ -8,11 +8,25 @@ every phase ends in a tagged commit.
 Two silos joined at mid-height by a concrete connection. Three WTVB01-485
 sensors, **all in the same orientation**, on the same RS-485 bus:
 
-| Sensor | Position | Modbus | Role |
-|---|---|---|---|
-| SENSOR-001 | Top | 0x50 | movement of the upper structure |
-| SENSOR-002 | Mid-height | 0x51 | movement at the joined level |
-| SENSOR-003 | Ground | 0x52 | **reference** — what the site does to everything |
+**As built**: each sensor has its own USB-RS485 adapter, so there are three
+buses rather than one, and every unit keeps the factory address 0x50. Address
+collision is a property of shared wires and there are none.
+
+| Sensor | Position | Adapter | Modbus | Role |
+|---|---|---|---|---|
+| SENSOR-001 | Top | `quakevault-rs485-p1` | 0x50 | movement of the upper structure |
+| SENSOR-002 | Mid-height | `quakevault-rs485-p2` | 0x50 | movement at the joined level |
+| SENSOR-003 | Ground | `quakevault-rs485-p4` | 0x50 | **reference** — what the site does to everything |
+
+The aliases are keyed to physical USB sockets, because these CH341 adapters
+report no serial number. Which sensor sits in which socket was established by
+tapping each one and watching all three ports — TOP registered 0.93 g against
+0.09, MID 0.42 against 0.05, GROUND 0.98 against 0.02. Evidence, not cable
+tracing.
+
+**Moving an adapter to a different socket reassigns which sensor the appliance
+believes it is reading**, which on this installation would swap the ground
+reference with a structural sensor and invert the interpretation of everything.
 
 The ground sensor is what makes the other two interpretable. A lorry, a distant
 blast or a seismic event moves all three; only the difference between them is
@@ -34,7 +48,7 @@ Each is a commit. Later phases assume earlier ones.
 
 | # | Phase | Status |
 |---|---|---|
-| 1 | Multi-sensor data model, bus capacity, provisioning | todo |
+| 1 | Multi-sensor data model, bus capacity, provisioning | **done** |
 | 2 | Alarm definitions for all four quantities on all sensors | todo |
 | 3 | Reference-sensor differencing (what the site did vs what the silo did) | todo |
 | 4 | MQTT alarm publication | todo |

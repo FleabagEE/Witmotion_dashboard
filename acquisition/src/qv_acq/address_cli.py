@@ -54,11 +54,30 @@ MAX_ADDRESS = 247
 #: slack so a slow reboot is not mistaken for a lost device.
 REBOOT_SECONDS = 3.0
 
+#: Per-address budget while sweeping.
+#:
+#: A device that is present answers within about ten milliseconds at 9600 baud;
+#: waiting a second for one that is not, three times over, turns a 247-address
+#: sweep into twelve minutes. The first version did exactly that and looked
+#: like a hang.
+SWEEP_TIMEOUT = 0.15
+SWEEP_RETRIES = 0
+
 
 def responds(client: ModbusSerialClient, slave: int) -> bool:
-    """Whether anything answers at this address."""
+    """Whether anything answers at this address.
+
+    Only a *communication* failure counts as silence. The first version caught
+    every exception here, so calling pymodbus with the wrong keyword returned
+    False for all 247 addresses and reported "nothing answered" about a bus with
+    a healthy sensor on it. A programming error presented as a hardware finding
+    is worse than a crash, because somebody goes and checks the wiring.
+    """
     try:
-        response = client.read_holding_registers(0x34, count=1, slave=slave)
+        response = client.read_holding_registers(0x34, count=1, device_id=slave)
+    except (TypeError, AttributeError):
+        # Wrong call signature, not a quiet bus. Let it out.
+        raise
     except Exception:  # noqa: BLE001
         return False
 
@@ -74,11 +93,29 @@ def sweep(client: ModbusSerialClient, lo: int = MIN_ADDRESS, hi: int = MAX_ADDRE
     """
     found = []
 
-    for slave in range(lo, hi + 1):
-        if responds(client, slave):
-            found.append(slave)
-            if not quiet:
-                print(f"    found a device at 0x{slave:02X}")
+    # Silence should cost milliseconds, not seconds. Reached through getattr
+    # because these are pymodbus internals: a client that does not expose them
+    # is swept at whatever budget it has rather than being refused.
+    params = getattr(client, "comm_params", None)
+    was_timeout = getattr(params, "timeout_connect", None) if params else None
+    was_retries = getattr(client, "retries", None)
+
+    try:
+        if was_timeout is not None:
+            params.timeout_connect = SWEEP_TIMEOUT
+        if was_retries is not None:
+            client.retries = SWEEP_RETRIES
+
+        for slave in range(lo, hi + 1):
+            if responds(client, slave):
+                found.append(slave)
+                if not quiet:
+                    print(f"    found a device at 0x{slave:02X}")
+    finally:
+        if was_timeout is not None:
+            params.timeout_connect = was_timeout
+        if was_retries is not None:
+            client.retries = was_retries
 
     return found
 
@@ -105,7 +142,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Address must be {MIN_ADDRESS}-{MAX_ADDRESS} (0 is broadcast).", file=sys.stderr)
         return 2
 
-    client = ModbusSerialClient(port=args.port, baudrate=args.baud, timeout=args.timeout)
+    # Two budgets. Sweeping wants to give up quickly on silence; the write and
+    # the read-back afterwards want the normal patience.
+    client = ModbusSerialClient(
+        port=args.port, baudrate=args.baud, timeout=args.timeout, retries=1,
+    )
 
     if not client.connect():
         print(f"Could not open {args.port} at {args.baud} baud.", file=sys.stderr)
@@ -159,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # 3. Write and save.
         print("\n  writing address...")
-        response = client.write_register(ADDRESS_REGISTER, target, slave=current)
+        response = client.write_register(ADDRESS_REGISTER, target, device_id=current)
 
         if response is None or response.isError():
             print(f"Write refused: {response}", file=sys.stderr)
@@ -167,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print("  saving and rebooting...")
         try:
-            client.write_register(SAVE_REGISTER, SAVE_VALUE, slave=current)
+            client.write_register(SAVE_REGISTER, SAVE_VALUE, device_id=current)
         except Exception:  # noqa: BLE001
             # The device may reboot mid-transaction and never answer. That is
             # not a failure; the read-back decides.

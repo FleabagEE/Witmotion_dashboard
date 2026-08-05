@@ -42,9 +42,10 @@ class SiloProvision extends Command
     protected $signature = 'silo:provision
         {--appliance=QV-EDGE-001}
         {--structure=Silo pair, joined at mid-height}
-        {--top=SENSOR-001} {--top-slave=0x50}
-        {--mid=SENSOR-002} {--mid-slave=0x51}
-        {--ground=SENSOR-003} {--ground-slave=0x52}
+        {--top=SENSOR-001} {--top-slave=0x50} {--top-port=/dev/quakevault-rs485-p1}
+        {--mid=SENSOR-002} {--mid-slave=0x50} {--mid-port=/dev/quakevault-rs485-p2}
+        {--ground=SENSOR-003} {--ground-slave=0x50} {--ground-port=/dev/quakevault-rs485-p4}
+        {--shared-bus : all three on one adapter, which requires distinct addresses}
         {--dry-run}';
 
     protected $description = 'Register the three silo sensors with their positions and roles';
@@ -102,18 +103,36 @@ class SiloProvision extends Command
         foreach (self::POSITIONS as $key => $spec) {
             $rows[] = [
                 'sensor_id' => $this->option($key),
-                'slave_id' => (int) $this->option("{$key}-slave"),
+                // intval with base 0, not a cast: (int) "0x50" is 0 in PHP, so a
+                // cast silently turns every address into the broadcast address.
+                'slave_id' => intval((string) $this->option("{$key}-slave"), 0),
+                'port' => $this->option("{$key}-port"),
                 'spec' => $spec,
             ];
         }
 
+        // Address collision is a property of shared wires, not of sensors. With
+        // one adapter per sensor every bus carries exactly one device and all
+        // three may keep the factory 0x50; the first version of this check
+        // refused that valid arrangement outright.
+        //
+        // On a shared bus it is the failure that matters most, because two
+        // devices answering together produce garbled data rather than an
+        // obvious fault - so the check still applies there.
         $slaves = array_column($rows, 'slave_id');
+        $ports = array_column($rows, 'port');
+        $sharedBus = $this->option('shared-bus') || count(array_unique($ports)) === 1;
 
-        if (count(array_unique($slaves)) !== count($slaves)) {
-            // Two sensors answering the same address corrupt every reply on the
-            // bus, and the symptom is garbled data rather than a clean failure.
-            $this->error('Two sensors share a Modbus address. Change one with the '
-                .'manufacturer tool before either goes on the bus.');
+        if ($sharedBus && count(array_unique($slaves)) !== count($slaves)) {
+            $this->error('These sensors share one bus and one Modbus address. Two devices '
+                .'answering together corrupt every reply.');
+            $this->line('  Give each a distinct address first: qv-set-address --to 0x51');
+
+            return self::FAILURE;
+        }
+
+        if (! $sharedBus && count(array_unique($ports)) !== count($ports)) {
+            $this->error('Two sensors are configured on the same port with the same address.');
 
             return self::FAILURE;
         }
@@ -122,8 +141,9 @@ class SiloProvision extends Command
         $this->newLine();
 
         foreach ($rows as $row) {
-            $this->line(sprintf('  %-12s %-14s slave 0x%02X  %s',
+            $this->line(sprintf('  %-8s %-14s 0x%02X  %-32s %s',
                 $row['spec']['position'], $row['sensor_id'], $row['slave_id'],
+                $row['port'],
                 $row['spec']['role'] === 'reference' ? '(reference)' : ''));
         }
 
@@ -152,6 +172,12 @@ class SiloProvision extends Command
                 'role' => $row['spec']['role'],
                 'note' => $row['spec']['height_note'],
                 'surface' => 'vertical_wall',
+                // Which socket this unit is in. These adapters report no serial
+                // number, so the physical port is the only identity a sensor
+                // has - established at commissioning by tapping each one and
+                // seeing which port responded, not by tracking cables.
+                'port' => $row['port'],
+                'slave_id' => $row['slave_id'],
                 // All three go on the same way. Recorded rather than assumed, so
                 // a reader can check it instead of inheriting it.
                 'orientation' => 'identical across all three sensors',
@@ -184,11 +210,20 @@ class SiloProvision extends Command
         foreach ($rows as $row) {
             $this->line("  php artisan tilt:baseline capture --sensor={$row['sensor_id']}");
         }
-        $this->newLine();
-        $this->warn('The Modbus addresses above must already be set on the hardware.');
-        $this->line('  All three ship as 0x50. Two on one bus at the same address answer');
-        $this->line('  simultaneously and corrupt every reply, which reads as noise rather');
-        $this->line('  than as a fault.');
+        if ($sharedBus) {
+            $this->newLine();
+            $this->warn('The Modbus addresses above must already be set on the hardware.');
+            $this->line('  All three ship as 0x50, and two at the same address on one bus');
+            $this->line('  answer simultaneously and corrupt every reply.');
+        } else {
+            $this->newLine();
+            $this->line('One adapter per sensor, so all three keep the factory address.');
+            $this->warn('The port is the only identity these sensors have.');
+            $this->line('  Moving an adapter to a different USB socket reassigns which sensor');
+            $this->line('  the appliance believes it is reading. On this installation that would');
+            $this->line('  swap the ground reference with a structural sensor and invert the');
+            $this->line('  interpretation of everything. Re-run the tap test after any move.');
+        }
 
         return self::SUCCESS;
     }

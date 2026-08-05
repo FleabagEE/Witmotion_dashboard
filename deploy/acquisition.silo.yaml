@@ -1,0 +1,116 @@
+# QuakeVault acquisition configuration.
+#
+# Installed to /etc/quakevault/acquisition.yaml. Validate any change before
+# restarting the service:
+#
+#   sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/python \
+#       -m qv_acq.service --check --config /etc/quakevault/acquisition.yaml
+#
+# The service refuses to start on a sensor whose profile is not `verified`, so a
+# register map that has not been confirmed cannot reach production by accident.
+
+appliance_id: QV-EDGE-001
+
+spool:
+  path: /var/lib/quakevault-acq/spool.db
+  max_rows: 500000
+  # true  = bounded disk, oldest undelivered data sacrificed when full (counted, never silent)
+  # false = never discard undelivered data, accept unbounded growth instead
+  drop_undelivered_when_full: true
+
+metrics:
+  path: /var/lib/quakevault-acq/metrics.prom
+  interval_seconds: 10
+  enabled: true
+
+forwarder:
+  enabled: true
+  base_url: http://127.0.0.1:8000/api/internal/v1/ingest
+  # The credential itself lives in /etc/quakevault/forwarder.env (mode 0600),
+  # never in this file, which is world-readable and version-controlled.
+  token_env: QV_INGEST_TOKEN
+  batch_size: 200
+  # One second, not five. The forwarder interval is the dominant term in
+  # end-to-end latency: everything upstream is sub-second, so a five-second
+  # drain made a live waveform lag by five seconds for no other reason.
+  interval_seconds: 1
+  announce_profiles: true
+
+buses:
+  - bus_id: BUS-TOP
+    adapter_id: RS485-TOP
+    # One sensor per adapter, so no address collision is possible and every unit
+    # keeps the factory 0x50. The alias is keyed to the physical USB socket
+    # because these CH341 adapters report no serial number - see
+    # deploy/udev/99-quakevault-rs485.rules. Moving a cable to another socket
+    # reassigns which sensor the appliance thinks it is reading.
+    #
+    # Top of the silo. Moves most for a given rotation, so it sees settlement earliest.
+    port: /dev/quakevault-rs485-p1
+    baud: 9600
+    timeout: 1.0
+    retry_max_attempts: 2
+    breaker_failure_threshold: 3
+    breaker_cooldown_seconds: 5.0
+    sensors:
+      - sensor_id: SENSOR-001
+        model: WTVB01-485
+        slave_id: 0x50
+        groups:
+          - motion
+          - fault_diagnosis
+        poll_hz:
+          motion: 1
+          fault_diagnosis: 0.1
+
+  - bus_id: BUS-MID
+    adapter_id: RS485-MID
+    # One sensor per adapter, so no address collision is possible and every unit
+    # keeps the factory 0x50. The alias is keyed to the physical USB socket
+    # because these CH341 adapters report no serial number - see
+    # deploy/udev/99-quakevault-rs485.rules. Moving a cable to another socket
+    # reassigns which sensor the appliance thinks it is reading.
+    #
+    # Mid-height, at the joined level. Against the top it separates a rigid lean from bending between them.
+    port: /dev/quakevault-rs485-p2
+    baud: 9600
+    timeout: 1.0
+    retry_max_attempts: 2
+    breaker_failure_threshold: 3
+    breaker_cooldown_seconds: 5.0
+    sensors:
+      - sensor_id: SENSOR-002
+        model: WTVB01-485
+        slave_id: 0x50
+        groups:
+          - motion
+          - fault_diagnosis
+        poll_hz:
+          motion: 1
+          fault_diagnosis: 0.1
+
+  - bus_id: BUS-GROUND
+    adapter_id: RS485-GROUND
+    # One sensor per adapter, so no address collision is possible and every unit
+    # keeps the factory 0x50. The alias is keyed to the physical USB socket
+    # because these CH341 adapters report no serial number - see
+    # deploy/udev/99-quakevault-rs485.rules. Moving a cable to another socket
+    # reassigns which sensor the appliance thinks it is reading.
+    #
+    # REFERENCE, at ground level. What this one sees, the site did. What the upper two see beyond it, the structure did.
+    port: /dev/quakevault-rs485-p4
+    baud: 9600
+    timeout: 1.0
+    retry_max_attempts: 2
+    breaker_failure_threshold: 3
+    breaker_cooldown_seconds: 5.0
+    sensors:
+      - sensor_id: SENSOR-003
+        model: WTVB01-485
+        slave_id: 0x50
+        groups:
+          - motion
+          - fault_diagnosis
+        poll_hz:
+          motion: 1
+          fault_diagnosis: 0.1
