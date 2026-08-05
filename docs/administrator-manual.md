@@ -13,6 +13,7 @@ For the person who installs, upgrades and keeps the appliance running.
 | WebSocket server (Reverb) | systemd, port **9080** | `quakevault-reverb` |
 | Live bridge (Redis → WS) | systemd | `quakevault-live-bridge` |
 | Wall display | systemd, optional | `quakevault-kiosk` |
+| Scheduled evaluation | systemd timer, **required** | `quakevault-scheduler.timer` |
 | TimescaleDB | Docker, port 5432 | `qv-timescaledb` |
 | Redis | Docker, port **6380** | `qv-redis` |
 | Mosquitto | Docker, port **1884** | `qv-mosquitto` |
@@ -29,6 +30,26 @@ docker ps --format '{{.Names}}: {{.Status}}' | grep qv-
 ```
 
 ---
+
+## Scheduled evaluation
+
+`quakevault-scheduler.timer` ticks every minute and Laravel decides what is due.
+It is the only thing that runs `tilt:check`, which compares each structure
+against its baseline and raises settlement alarms.
+
+**An appliance without it monitors nothing.** It polls its sensors, stores every
+reading, serves live charts and healthy sensor status, and evaluates none of it.
+This appliance ran that way for days; both alarm self-tests passed throughout,
+because neither goes near the scheduler.
+
+Check it:
+
+```bash
+systemctl list-timers quakevault-scheduler.timer
+```
+
+The System page also leads with a red banner if the heartbeat goes stale, and
+`acceptance/fault-injection.sh scheduler_ticks` asserts it in the acceptance run.
 
 ## Install
 

@@ -94,17 +94,52 @@ Status: `todo` | `in progress` | `blocked` | `done`
 | Task | Status | Owner role | Depends on | Validation | Result |
 |---|---|---|---|---|---|
 | Fault injection | **done** | QA | Phase 3–5 | 14/20 pass, 1 partial, 4 need hardware | `acceptance/fault-injection.sh` |
-| 24-hour soak | **running** | QA | engine | No unbounded growth | started 2026-08-03 12:01 |
+| 24-hour soak | **done** | QA | engine | Memory +0.6%, backlog drains, zero drops. Poll rate 16% under configured — explained, see below | `docs/acceptance-results.md` |
 | Backup / restore | **done** | DevSecOps | DB | Restore verified into a scratch DB | `acceptance/backup-restore.sh` |
 | Upgrade / rollback | **done** | DevSecOps | deploy | Real migration applied then reverted | `deploy/upgrade.sh` |
 | Acceptance report | **done** | QA | all | 20-case matrix recorded with evidence | `docs/acceptance-results.md` |
 | Documentation set | **done** | Tech writer | all | Operator, admin, troubleshooting, API, MQTT, testing | `docs/`, `README.md` |
 
+## Phase 7 — Settlement deployment and enterprise dashboard (2026-08-04/05)
+
+| Task | Status | Owner role | Depends on | Validation | Result |
+|---|---|---|---|---|---|
+| Pivot to tilt-only acquisition | **done** | Engine | Phase 3 | 1 Hz, bus 60.5% → 7.0%, storage 16.3M → 1.7M rows/day | `deploy/acquisition.tilt-only.yaml` |
+| Whole-bus capacity check | **done** | Engine | throughput | `--check` refuses over 65%; predicts 8.5 Hz against 8.38 measured | `bus_demand()`, 6 tests |
+| Three-position calibration | **done** | Hardware | unsigned finding | Gravity 0.9626 → 0.9995 g | `deploy/calibration.SENSOR-001.yaml` |
+| Wire calibration into acquisition | **done** | Engine | above | It was never loaded; `to_binding()` now takes it | 4 tests |
+| Install the scheduler | **done** | DevSecOps | — | `tilt:check` had never run once | `quakevault-scheduler.timer`, acceptance 13/14 |
+| Fix the settlement alarm | **done** | Backend | — | Could never fire: synthetic channel filtered on quantity | `TiltAlarmTest` |
+| Gravity-vector deviation | **done** | Backend | unsigned finding | Magnitude survives rectification; direction cannot | `TiltMonitorTest` |
+| Enterprise roles and thresholds | **done** | Backend | Roles | Operator and engineer both 403; changes audited; edits clear sign-off | `AdministrationTest`, 17 tests |
+| User management API and page | **done** | Full stack | above | Last administrator cannot be removed; sessions revoked | `UserController`, `Users.tsx` |
+| Event history | **done** | Full stack | audit | Alarms and audit interleaved, gated on `audit` | `EventController`, 7 tests |
+| On-screen alarm banner | **done** | Frontend | alarms | Every page; says when nobody was notified | `AlarmBanner.tsx`, 6 tests |
+| Email notification | **done** | DevSecOps | dispatcher | Gmail SMTP; proven by a real tilt alarm reaching the inbox | `alarms:channel`, `alarms:selftest` |
+| Live charts carry their limits | **done** | Frontend | thresholds | Looked up by quantity, not copied | `WaveformCard` |
+| Vibration definitions | **recording** | Backend | — | Placeholders, unconfirmed, deliberately silent | `alarms:vibration-survey` |
+
+### Six silent failures found in this phase
+
+Each would have left the appliance looking healthy while not working. Recorded
+because the pattern matters more than the individual bugs.
+
+| Failure | Why nothing noticed |
+|---|---|
+| Alarm filtered out before evaluation | Definition, command and deviation all correct; the route between them had no test |
+| Scheduler never installed | Both alarm tests bypass it. Only tilting the sensor by hand exposed it |
+| Calibration never loaded | File format, apply step, solver and CLI all existed and were tested |
+| Bus capacity never summed | `estimate()` answered for one group; nothing added up the five configured |
+| Acceleration reported unsigned | Every reading plausible; direction silently unmeasurable |
+| Chart scaled by its own artifacts | Every plotted point accurate, the picture useless |
+
 ## Blocked — hardware not available
 
 | Case | Needs |
 |---|---|
-| HIL 2 — one HWT901B-485 | An HWT901B-485. Ordered, never arrived |
+| Mid-vs-top differential | A second WTVB01-485 at Modbus 0x51, mounted. Design settled: common mode is foundation rotation, differential is shell bending, and magnitude alone separates them |
+| Commissioning baseline | Both sensors mounted on the silo. The current baseline is a bench reading |
+| HIL 2 — one HWT901B-485 | An HWT901B-485. Ordered, never arrived. **No longer on the critical path** — magnitude-only monitoring is sufficient for the stated goal |
 | HIL 3 — both types, separate adapters | As above |
 | HIL 4 — both types, one multi-drop bus | As above |
 | HIL 5 — multiple sensors on one bus | A second *working* WTVB01-485. The spare is faulty |
@@ -122,11 +157,31 @@ and is deliberately not recorded as if it were.
    while X responded under weaker excitation in the same session.
 2. Supply DIN 4150-3 and/or BS 7385-2 standard text so the guideline tables can
    be promoted from candidate to verified.
-3. Confirm structure class, measurement position, and whether the concern is
-   transient (blasting, piling) or long-term (traffic, settlement). Without
-   these no structural alarm definition exists at all - only the liveness alarm.
-4. Optional: run the six-position accelerometer calibration. Implemented and
-   tested; not applied. Worth ~2 degrees of inclination accuracy.
+3. ~~Confirm structure class and measurement position~~ — **answered
+   2026-08-04.** Long-term settlement of a 30 ft concrete silo; two sensors
+   stacked plumb-aligned on one face, mid-height and top; outdoor IP67.
+
+   Four definitions now exist. Tilt movement (0.5 / 3 deg) and sensor liveness
+   are confirmed and live. Vibration acceleration and velocity are recording and
+   deliberately unconfirmed until `alarms:vibration-survey` supplies real
+   numbers.
+
+   **Open question for the structural engineer.** 3 deg on a 30 ft silo is
+   479 mm of top movement, roughly H/19, against serviceability criteria that
+   are usually H/250 to H/500. It is confirmed in his name and stands as his
+   decision. The warning level at 0.5 deg was not specifically chosen by anyone
+   and is where an earlier settlement indication would belong.
+4. ~~Six-position accelerometer calibration~~ — **superseded 2026-08-05.**
+   Six-position is impossible on this model: acceleration is reported as
+   unsigned magnitude, so z-up and z-down return the same vector and the
+   ellipsoid fit has nothing to solve. A three-position procedure was used
+   instead and **is applied** — per-axis gains 0.99756 / 1.00586 / 0.96240,
+   gravity now reads 0.9995 g against 0.9626 before.
+
+   The earlier claim that it was "worth ~2 degrees of inclination accuracy" was
+   wrong. A gain error cancels when the vector is normalised, so it does not
+   affect a tilt angle at all. What it fixes is the magnitude, which is the best
+   single indicator that a sensor is healthy.
 
 ## Not covered by tests
 

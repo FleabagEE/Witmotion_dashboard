@@ -368,7 +368,8 @@ sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-acq \
 ```
 
 ```bash
-systemctl is-active quakevault-acq quakevault-forwarder quakevault-reverb quakevault-live-bridge
+systemctl is-active quakevault-acq quakevault-forwarder quakevault-reverb \
+                    quakevault-live-bridge quakevault-scheduler.timer
 ```
 
 **Inspect registers** (the serial port is exclusive — stop acquisition first):
