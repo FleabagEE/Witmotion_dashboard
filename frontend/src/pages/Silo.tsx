@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type HealthState, type SensorHealthRow } from '../lib/api'
 import { Empty } from '../components/ui'
+import { SiloDiagram } from '../components/SiloDiagram'
 
 /**
  * The whole installation on one screen.
@@ -224,8 +225,46 @@ export function Silo() {
         </>
       )}
 
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <SiloDiagram
+          sensors={sensors}
+          topMovement={s?.available ? s.structure?.top : undefined}
+          midMovement={s?.available ? s.structure?.mid : undefined}
+        />
+
+        <div className="rounded-xl border border-line bg-panel p-4">
+          <div className="text-[11px] uppercase tracking-wider text-ink-dim">
+            What this installation can and cannot tell you
+          </div>
+          <ul className="mt-2 space-y-2 text-xs leading-relaxed text-ink-dim">
+            <li>
+              <span className="text-ink">Can:</span> how far the structure has moved,
+              and whether it moved as one piece or bent between the two heights.
+            </li>
+            <li>
+              <span className="text-ink">Can:</span> separate a passing lorry or a
+              distant blast from the silo settling, because the ground sensor sees
+              the first and not the second.
+            </li>
+            <li>
+              {/* Said here rather than buried in a document, because a single
+                  movement figure invites the question. */}
+              <span className="text-warning">Cannot:</span> say which way it leaned.
+              These sensors report the size of each acceleration component and not
+              its sign, so a lean north and a lean south read identically.
+            </li>
+            <li>
+              <span className="text-warning">Cannot:</span> tell solar bowing from
+              settlement on a sunny day. Concrete warmed on one side really does
+              lean, and that is the structure moving rather than an instrument
+              error.
+            </li>
+          </ul>
+        </div>
+      </div>
+
       {/* Then the instruments, as a separate question. */}
-      <div>
+      <section aria-label="Sensors">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="text-sm font-semibold">Sensors</h2>
           <span className="text-[11px] text-ink-dim">
@@ -244,7 +283,7 @@ export function Silo() {
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
   )
 }

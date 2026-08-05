@@ -1,8 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import type { SensorHealthRow, StructureResponse } from '../lib/api'
+
+/**
+ * The diagram and the cards both name the sensors, so assertions about the
+ * cards are scoped to the cards. An unscoped match would pass on either, which
+ * means it would keep passing if the card list disappeared entirely.
+ */
+const cards = () => within(screen.getByRole('region', { name: 'Sensors' }))
 
 /**
  * The installation on one screen, and the separation it must preserve.
@@ -78,12 +85,12 @@ describe('Silo', () => {
   it('orders the sensors top, mid, ground', async () => {
     // Reading order should match the structure, not the database.
     show()
-    await screen.findByText('SENSOR-001')
+    await screen.findAllByText('SENSOR-001')
 
     // Case-sensitive: the cards carry lowercase text capitalised by CSS, while
     // the movement figures above are titled "Top" and "Mid". Matching loosely
     // picked up both and compared the wrong list.
-    const labels = screen.getAllByText(/^(top|mid|ground)$/).map((n) => n.textContent)
+    const labels = cards().getAllByText(/^(top|mid|ground)$/).map((n) => n.textContent)
     expect(labels).toEqual(['top', 'mid', 'ground'])
   })
 
@@ -124,7 +131,7 @@ describe('Silo', () => {
     expect(await screen.findByText(/cannot be measured yet/i)).toBeInTheDocument()
     expect(screen.getByText(/mid, ground/)).toBeInTheDocument()
     // The sensors are still shown: they are a separate question.
-    expect(screen.getByText('SENSOR-001')).toBeInTheDocument()
+    expect(cards().getByText('SENSOR-001')).toBeInTheDocument()
   })
 
   it('shows an unhealthy sensor even when the structure reads fine', async () => {
@@ -138,7 +145,7 @@ describe('Silo', () => {
     show()
 
     expect(await screen.findByText(/Silent for 900s/)).toBeInTheDocument()
-    expect(screen.getByText('fault')).toBeInTheDocument()
+    expect(cards().getByText('fault')).toBeInTheDocument()
   })
 
   it('warns when there is no ground reference', async () => {
