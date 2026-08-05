@@ -15,6 +15,53 @@ class PublishHealth extends Command
 
     protected $description = 'Publish appliance health to MQTT for integrations';
 
+    /**
+     * The latest value on every channel, once a minute.
+     *
+     * `mqtt-topics.md` has documented this topic since the appliance was built
+     * and nothing ever published to it. A documented topic that never carries a
+     * message is worse than an undocumented one: an integrator writes a
+     * subscriber against it, sees silence, and has no way to tell a broken
+     * appliance from a quiet structure.
+     *
+     * A snapshot rather than a stream. Acquisition runs at 1 Hz across twenty
+     * channels on three sensors; forwarding all of it would put sixty messages
+     * a second on a broker to say what the durable record already holds. What an
+     * integration wants from MQTT is current state, and it can ask the API for
+     * history.
+     */
+    private function publishSnapshot(MqttPublisher $mqtt, string $sensorId, \Illuminate\Support\Carbon $now): void
+    {
+        $rows = \Illuminate\Support\Facades\DB::select(<<<'SQL'
+            SELECT DISTINCT ON (channel_key) channel_key, value, unit, quality, time
+            FROM measurements
+            WHERE sensor_id = ? AND time > now() - interval '5 minutes'
+            ORDER BY channel_key, time DESC
+        SQL, [$sensorId]);
+
+        if ($rows === []) {
+            // Silence rather than a snapshot of nothing. A subscriber seeing no
+            // message learns the same thing the status topic already told it.
+            return;
+        }
+
+        $values = [];
+        $latest = null;
+
+        foreach ($rows as $row) {
+            $values[$row->channel_key] = [
+                'value' => $row->value === null ? null : round((float) $row->value, 6),
+                'unit' => $row->unit,
+                // Carried, because a reading the appliance did not believe must
+                // not arrive downstream looking like one it did.
+                'quality' => $row->quality,
+            ];
+            $latest = max($latest ?? $row->time, $row->time);
+        }
+
+        $mqtt->publishMeasurements($sensorId, $values, (string) ($latest ?? $now));
+    }
+
     public function handle(MqttPublisher $mqtt): int
     {
         if (! $mqtt->enabled()) {
@@ -50,7 +97,15 @@ class PublishHealth extends Command
                 'silent_for_seconds' => $silentFor,
                 'model' => $sensor->model?->model,
                 'verification_status' => $sensor->model?->verification_status,
+                // Where this sensor sits and what it is for. An integration
+                // reading three identical-looking units otherwise has no way to
+                // know which one is the ground reference, and treating the
+                // reference as a structural sensor inverts everything.
+                'position' => ($sensor->metadata['mounting'] ?? [])['position'] ?? null,
+                'role' => ($sensor->metadata['mounting'] ?? [])['role'] ?? null,
             ]);
+
+            $this->publishSnapshot($mqtt, $sensor->sensor_id, $now);
         }
 
         $mqtt->disconnect();
