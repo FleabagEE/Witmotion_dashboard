@@ -185,5 +185,25 @@ and is deliberately not recorded as if it were.
 
 ## Not covered by tests
 
-- The Signal page, routing and the login flow are hand-verified only.
+Narrowed 2026-08-05. The four pages carrying judgement — settlement figures,
+thresholds, accounts and history — now have tests, written against the
+behaviours that would fail quietly rather than against layout.
+
+| Page | Covered |
+|---|---|
+| Tilt (settlement) | 8 — readings survive a missing baseline, figures reconcile, discarded minutes stated, direction limitation stated |
+| Thresholds | 9 — operator and engineer cannot edit, reason required, sign-off visibly stripped |
+| Users | 9 — sole-administrator warning, password reset signs out everywhere, server refusals surfaced |
+| Events | 10 — audit absence stated rather than silent, only changed fields shown |
+| Alarms, AlarmBanner, WaveformCard | 19 |
+
+Still hand-verified only:
+
+- The Signal page, the login flow, and routing between pages.
+- `Overview`, `SensorDetail`, `Live` and `Kiosk`.
 - Nothing visual: no screenshot or layout testing.
+
+Every page test above was checked by reintroducing the bug it was written for
+and confirming it fails. A test that passes against broken code is worse than no
+test, and this project has produced three mechanisms that were fully tested and
+never invoked.
