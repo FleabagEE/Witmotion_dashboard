@@ -89,6 +89,8 @@ export const api = {
     }),
   events: (days = 30, kind: 'all' | 'alarms' | 'audit' = 'all') =>
     request<EventsResponse>(`/events?days=${days}&kind=${kind}`),
+  structure: (minutes = 60) => request<StructureResponse>(`/structure?minutes=${minutes}`),
+  sensorHealth: (seconds = 120) => request<SensorHealthResponse>(`/sensor-health?seconds=${seconds}`),
   users: () => request<{ data: ManagedUser[] }>('/users'),
   roles: () => request<{ data: { role: string; abilities: string[] }[] }>('/roles'),
   createUser: (body: { name: string; email: string; role: string; password: string }) =>
@@ -450,4 +452,45 @@ export interface EventsResponse {
   /** False means a second record exists that this role cannot read. */
   audit_visible: boolean
   data: EventRow[]
+}
+
+export type HealthState = 'pass' | 'warn' | 'fail' | 'unknown'
+
+export interface SensorHealthRow {
+  sensor_id: string
+  position: 'top' | 'mid' | 'ground' | null
+  role: 'monitor' | 'reference'
+  port: string | null
+  model: string | null
+  verification_status: string | null
+  temperature: number | null
+  /** Must read 1 g at rest whatever the orientation. */
+  gravity_magnitude: number | null
+  silent_for_seconds: number | null
+  status: HealthState
+  checks: Record<string, { state: HealthState; detail: string }>
+}
+
+export interface SensorHealthResponse {
+  generated_at: string
+  window_seconds: number
+  status: HealthState
+  sensors: SensorHealthRow[]
+}
+
+export interface StructureResponse {
+  generated_at: string
+  available: boolean
+  reason?: string
+  missing?: string[]
+  window_minutes?: number
+  /** What the ground reference itself moved. Reported, not merely subtracted. */
+  site?: number | null
+  reference_available?: boolean
+  warning?: string
+  structure?: { top?: number; mid?: number }
+  /** Top minus mid. Zero means a rigid rotation of the whole structure. */
+  bending?: number
+  interpretation?: { shape: 'still' | 'rigid' | 'bending' | 'unexpected'; summary: string }
+  positions?: Record<string, unknown>
 }

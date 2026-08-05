@@ -13,6 +13,7 @@ import { Alarms } from './pages/Alarms'
 import { Thresholds } from './pages/Thresholds'
 import { Users } from './pages/Users'
 import { Events } from './pages/Events'
+import { Silo } from './pages/Silo'
 import { AlarmBanner } from './components/AlarmBanner'
 
 const queryClient = new QueryClient({
@@ -26,7 +27,9 @@ function Nav({ user, onSignOut }: { user: CurrentUser; onSignOut: () => void }) 
   // see the limit cannot judge whether an alarm matters. The page itself
   // decides what is editable, and the server decides again.
   const links = [
-    { to: '/', label: 'Movement' },
+    // Structure leads: the appliance monitors an installation, not a sensor.
+    { to: '/', label: 'Structure' },
+    { to: '/movement', label: 'Movement' },
     { to: '/live', label: 'Live' },
     { to: '/system', label: 'System' },
     { to: '/signal', label: 'Signal' },
@@ -123,7 +126,8 @@ export default function App() {
           <Routes>
             {/* Movement is the landing page: this appliance monitors settlement.
                 Live stays reachable for commissioning checks. */}
-            <Route path="/" element={<Tilt />} />
+            <Route path="/" element={<Silo />} />
+            <Route path="/movement" element={<Tilt />} />
             <Route path="/live" element={<Live />} />
             <Route path="/system" element={<Overview />} />
             <Route path="/sensors/:sensorId" element={<SensorDetail />} />
