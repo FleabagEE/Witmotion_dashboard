@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AlarmActionController;
 use App\Http\Controllers\Api\AlarmDefinitionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\IngestController;
 use App\Http\Controllers\Api\ReadController;
 use App\Http\Controllers\Api\SpectrumController;
@@ -47,6 +48,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/spectrum', SpectrumController::class)->name('spectrum');
         Route::get('/tilt', TiltController::class)->name('tilt');
         Route::get('/structure', StructureController::class)->name('structure');
+        Route::get('/sensor-health', HealthController::class)->name('sensor-health');
         Route::get('/alarms', [ReadController::class, 'alarms'])->name('alarms.index');
 
         // Readable by anyone who can read: an operator who cannot see the

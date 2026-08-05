@@ -417,6 +417,45 @@ paths:
         "200": { description: Recorded }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /api/v1/sensor-health:
+    get:
+      tags: [read]
+      summary: Whether each sensor can still be believed
+      description: |
+        Deliberately says nothing about the structure. A dead sensor and a
+        perfectly still silo produce the same chart — every flat line has two
+        explanations and only one is good news.
+
+        Each check is a fact about the instrument: is data arriving, does |a|
+        read 1 g at rest (which it must whatever the orientation), how much did
+        the decoder reject, what does the device say about itself, is a
+        calibration fitted, is there a commissioning baseline.
+
+        An uncalibrated sensor warns rather than fails. Each accelerometer is
+        wrong in its own way, and 0.987 g is a unit being honest — a failed axis
+        costs 30% or more and cannot hide behind the 5% tolerance.
+      parameters:
+        - { name: seconds, in: query, schema: { type: integer, default: 120, minimum: 30, maximum: 3600 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, status, sensors]
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  window_seconds: { type: integer }
+                  status:
+                    type: string
+                    enum: [pass, warn, fail, unknown]
+                    description: The worst state across every sensor.
+                  sensors:
+                    type: array
+                    items: { $ref: "#/components/schemas/SensorHealth" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/v1/structure:
     get:
       tags: [read]
@@ -1138,6 +1177,36 @@ components:
             Returned rather than dropped so a client can shade the period: the
             excluded history stays visible without setting the scale of an axis
             that has to resolve hundredths of a degree.
+
+    SensorHealth:
+      type: object
+      required: [sensor_id, status, checks]
+      properties:
+        sensor_id: { type: string }
+        position: { type: [string, "null"], enum: [top, mid, ground, null] }
+        role: { type: string, enum: [monitor, reference] }
+        port: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        verification_status: { type: [string, "null"] }
+        temperature: { type: [number, "null"] }
+        gravity_magnitude:
+          type: [number, "null"]
+          description: |
+            Must be 1 g at rest whatever the orientation. The best single
+            evidence an accelerometer is working.
+        silent_for_seconds: { type: [integer, "null"] }
+        status: { type: string, enum: [pass, warn, fail, unknown] }
+        checks:
+          type: object
+          description: |
+            Named checks, each with a state and a detail. A wall display can
+            read `status`; somebody diagnosing needs the detail.
+          additionalProperties:
+            type: object
+            required: [state, detail]
+            properties:
+              state: { type: string, enum: [pass, warn, fail, unknown] }
+              detail: { type: string }
 
     HistoryEvent:
       type: object

@@ -52,7 +52,7 @@ Each is a commit. Later phases assume earlier ones.
 | 2 | Alarm definitions for all four quantities on all sensors | **done** |
 | 3 | Reference-sensor differencing (what the site did vs what the silo did) | **done** |
 | 4 | MQTT alarm publication | **done** |
-| 5 | State of health per sensor | todo |
+| 5 | State of health per sensor | **done** |
 | 6 | Dashboard restructure — multi-sensor, enterprise design | todo |
 | 7 | Silo diagram with live sensor status | todo |
 | 8 | Documentation, acceptance, tag | todo |
