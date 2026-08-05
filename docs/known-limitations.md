@@ -586,3 +586,56 @@ of them was wired to anything, and in every case the dashboard looked healthy.
 A test that exercises a component proves the component. Only a test that starts
 at the physical world — tilting the sensor, pulling the cable — proves the
 appliance.
+
+---
+
+## The dashboard did not survive a reboot (fixed 2026-08-05)
+
+The PC lost power. It came back. The sensors came back with it — acquisition,
+the forwarder and the scheduler are all systemd units, so they resumed on their
+own and did not miss a reading.
+
+The dashboard did not, because it was not a unit. It was a Vite development
+server on 5173 and a `php artisan serve` on 8000, both started by hand in a
+terminal weeks earlier and never written down anywhere. On an appliance whose
+entire purpose is to be looked at, the half that gets looked at was the half
+with no supervision.
+
+Acceptance case 13, "appliance reboot", said **PASS**. It was not wrong. It
+checked that four units were enabled, and all four were. The dashboard was not
+in the list because the list was written from the set of units that existed,
+and the missing unit is by definition not in that set.
+
+**Fixed.**
+
+- `deploy/systemd/quakevault-dashboard.service` — enabled, `Restart=always`,
+  `PHP_CLI_SERVER_WORKERS=8` so one slow query cannot block the kiosk.
+- The frontend now builds into `backend/public/` and Laravel serves it. One
+  process, one port, no CORS surface. `deploy/build-dashboard.sh` builds it and
+  runs the frontend tests first.
+- `deploy/install-acquisition.sh` installs and enables the unit, and warns if no
+  built dashboard is present.
+- Case 13 is superseded by case 21, `acceptance/post-reboot.sh`, which asks
+  from outside the appliance: does the dashboard answer, does its bundle load,
+  are all three sensors delivering rows, has the scheduler ticked. It looks at
+  what is enabled last and only as corroboration.
+
+Two things fell out of the fix. The kiosk unit had pointed at
+`http://127.0.0.1:8000/kiosk` for weeks; under the old split that port served
+Laravel's welcome page, so the wall display had never worked. And the browser
+tab said `frontend`.
+
+### The shape of this failure, again
+
+This is the fifth instance of one pattern on this appliance, and the first where
+the missing piece was the product itself rather than a subsystem: calibration,
+the bus capacity model, the scheduler, `publishMeasurements`, and now the
+dashboard process. Every one was complete, tested code that nothing invoked.
+
+The scheduler entry above ends: *only a test that starts at the physical world
+proves the appliance*. This one narrows it. Case 13 did start at the physical
+world — somebody really did reboot the machine. It still passed, because after
+the reboot it asked the appliance about itself instead of asking what a person
+standing in front of the screen would see.
+
+Start at the physical world, and finish at the user.

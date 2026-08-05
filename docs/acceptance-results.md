@@ -27,7 +27,7 @@ Reproduce with `acceptance/fault-injection.sh` and
 | 10 | Delayed response | **PASS** | Latency recorded (402 ms against a 100 ms timeout); see the timeout finding below |
 | 11 | No response | **PASS** | Serial device removed for 20 s: service stayed up, resumed at 1951 rows / 10 s |
 | 12 | `/dev/ttyUSB` renumbering | **PASS** | Configured as a udev alias, not a kernel name |
-| 13 | Appliance reboot | **PASS** | Real reboot survived on 2026-08-03; all four units enabled |
+| 13 | Appliance reboot | **SUPERSEDED** | Passed 2026-08-03 on the four acquisition units — and was true while the dashboard still did not come back. Replaced by case 21 |
 | 14 | Power loss during storage | **PASS** | `SIGKILL` mid-write: `integrity_check ok`, 500 000 rows intact, service restarted |
 | 15 | Redis outage | **PASS** | 20 s outage: acquisition unaffected, 7264 rows recorded through it |
 | 16 | MQTT outage | **PASS** | Broker stopped: acquisition unaffected, `mqtt:health` exited 0 |
@@ -35,8 +35,46 @@ Reproduce with `acceptance/fault-injection.sh` and
 | 18 | Docker restart | **PASS** | All three containers restarted; 6069 rows recovered, acquisition never stopped |
 | 19 | 24-hour soak | **RUNNING** | Started 2026-08-03 12:01; `acceptance/soak.sh --report` |
 | 20 | Storage pressure | **PASS** | 500 000-row cap enforced, `undelivered_dropped = 0` |
+| 21 | Whole appliance restarts itself | **PARTIAL** | `acceptance/post-reboot.sh` — 10/10 on 2026-08-05, but not yet run after a real reboot; see below |
 
-**14 passed, 1 partial, 4 not tested, 1 running.**
+**14 passed, 2 partial, 4 not tested, 1 running, 1 superseded.**
+
+## Case 13 was true, and the appliance was still headless
+
+Worth writing down, because the lesson is not about reboots.
+
+Case 13 read "PASS — real reboot survived, all four units enabled". Every word
+of that was correct. On 2026-08-05 the machine lost power, came back, and the
+client-facing dashboard did not: it was a Vite development server and a
+`php artisan serve`, both started by hand in a terminal, neither known to
+systemd. The sensors kept recording throughout. The screen was blank.
+
+The check knew about four units. The product needed five. A test written against
+the list of things that exist cannot notice the thing that does not.
+
+So case 21 does not check units at all. It asks the question from outside the
+appliance — does the dashboard answer, does its bundle load, are all three
+sensors delivering rows — and only then looks at what is enabled. Same
+principle as the entry in `known-limitations.md`: a test that starts at the
+physical world is the only one that proves an appliance.
+
+### Case 21, and what it does not yet show
+
+`acceptance/post-reboot.sh` passes 10 of 10 as of 2026-08-05 14:10, with the
+dashboard under `quakevault-dashboard.service`, enabled, and answering on
+127.0.0.1:8000. Restart-on-failure is proven: `systemctl kill -s KILL` was
+followed by the service returning on its own within three seconds.
+
+It is marked **PARTIAL** rather than PASS because this machine has not been
+rebooted since the unit was installed. Enablement and a `WantedBy` symlink are
+strong evidence and are not the same as having watched it happen. Reboot and
+run the script to close it:
+
+```
+sudo reboot
+# then, once back:
+acceptance/post-reboot.sh
+```
 
 ## Backup and restore
 

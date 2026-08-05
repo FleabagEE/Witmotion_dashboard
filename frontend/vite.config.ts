@@ -5,6 +5,15 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    // Built straight into the API's public directory, so the appliance serves
+    // the dashboard and the API from one supervised process. Two hand-started
+    // processes did not survive a power cut; see backend/routes/web.php.
+    outDir: '../backend/public',
+    // public/ is not ours to empty - index.php and the framework's files live
+    // there. deploy/build-dashboard.sh clears the previous assets instead.
+    emptyOutDir: false,
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,

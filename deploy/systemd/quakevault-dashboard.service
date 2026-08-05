@@ -1,0 +1,61 @@
+[Unit]
+Description=QuakeVault dashboard and API
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+# The screen is the product. Sensors under systemd kept recording through a
+# power cut on this bench while the dashboard, started by hand in a terminal,
+# did not come back - so the appliance was silently headless and looked broken
+# to anybody standing in front of it. This unit exists so that never recurs.
+
+[Service]
+Type=simple
+User=quakelogic
+Group=quakelogic
+WorkingDirectory=/var/www/quakevault-industrial/backend
+
+# Bind address and port. Defaults to loopback: the dashboard is reachable from
+# this machine only. To let other machines on the site network view it, set
+# QUAKEVAULT_HTTP_HOST=0.0.0.0 in /etc/quakevault/dashboard.env and restart.
+#
+# That is a deliberate decision rather than a default, because the API is
+# token-authenticated but has never been exposed to a network that anybody
+# else can reach.
+Environment=QUAKEVAULT_HTTP_HOST=127.0.0.1
+Environment=QUAKEVAULT_HTTP_PORT=8000
+
+# Concurrent requests. The single-worker default means one slow query blocks
+# every other client on site, including the kiosk. Only honoured with
+# --no-reload, which is correct here anyway: an appliance must not restart
+# itself because a file changed underneath it.
+Environment=PHP_CLI_SERVER_WORKERS=8
+
+EnvironmentFile=-/etc/quakevault/dashboard.env
+
+ExecStart=/usr/bin/php /var/www/quakevault-industrial/backend/artisan serve \
+    --no-reload \
+    --host=${QUAKEVAULT_HTTP_HOST} \
+    --port=${QUAKEVAULT_HTTP_PORT}
+
+Restart=always
+RestartSec=3
+
+# Hardening. The dashboard reads the database and the built assets; it has no
+# business anywhere else on the filesystem.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/www/quakevault-industrial/backend/storage
+ReadWritePaths=/var/www/quakevault-industrial/backend/bootstrap/cache
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=quakevault-dashboard
+
+[Install]
+WantedBy=multi-user.target

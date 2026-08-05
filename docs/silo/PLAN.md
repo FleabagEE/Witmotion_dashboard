@@ -54,8 +54,8 @@ Each is a commit. Later phases assume earlier ones.
 | 4 | MQTT alarm publication | **done** |
 | 5 | State of health per sensor | **done** |
 | 6 | Dashboard restructure — multi-sensor, enterprise design | **done** |
-| 7 | Silo diagram with live sensor status | todo |
-| 8 | Documentation, acceptance, tag | todo |
+| 7 | Silo diagram with live sensor status | **done** |
+| 8 | Documentation, acceptance, tag | **done** |
 
 ## Decisions taken
 
@@ -68,6 +68,11 @@ house style already agrees. Raised rather than silently substituted.
 StatusBadge, sidebar navigation, Tailwind with a dark theme. Adopted rather than
 invented so the two products look like siblings.
 
+**The dashboard is served by the API.** Phase 8 found the appliance did not
+survive a reboot: the frontend was a development server started by hand. It now
+builds into backend/public and runs under quakevault-dashboard.service. See
+docs/known-limitations.md.
+
 ## Open questions
 
 - Displacement amplitude: the WTVB01-485 reports it in um from a register whose
@@ -76,3 +81,10 @@ invented so the two products look like siblings.
   exists. `alarms:vibration-survey` supplies the numbers.
 - The 3 deg tilt critical is a seismic criterion; a settlement warning level has
   not been chosen by anybody.
+- SENSOR-002 and SENSOR-003 have no commissioning baseline, so structural
+  movement reads unavailable. They need mounting on the silo, an hour
+  undisturbed, then `tilt:baseline capture`.
+- Calibration files exist only for SENSOR-001. The other two read 0.9866 g and
+  0.9937 g, which is honest uncalibrated behaviour, not a fault.
+- Acceptance case 21 is PARTIAL until somebody reboots this machine and runs
+  `acceptance/post-reboot.sh`.

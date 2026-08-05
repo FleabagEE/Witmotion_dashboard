@@ -14,6 +14,7 @@ UNIT="quakevault-acq.service"
 SCHEDULER_UNIT="quakevault-scheduler.service"
 SCHEDULER_TIMER="quakevault-scheduler.timer"
 FORWARDER_UNIT="quakevault-forwarder.service"
+DASHBOARD_UNIT="quakevault-dashboard.service"
 
 log()  { printf '  %s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -134,14 +135,30 @@ install -m 0644 "$REPO/deploy/systemd/$FORWARDER_UNIT" /etc/systemd/system/
 # noticed until somebody asked whether tilting the sensor would trigger an alarm.
 install -m 0644 "$REPO/deploy/systemd/$SCHEDULER_UNIT" /etc/systemd/system/
 install -m 0644 "$REPO/deploy/systemd/$SCHEDULER_TIMER" /etc/systemd/system/
+
+# The dashboard, for the same reason and from the same lesson. It was two
+# processes started by hand in a terminal; a power cut brought the sensors back
+# under systemd and left the screen dark. On an appliance whose entire purpose
+# is to be looked at, that is the visible half of the product failing while the
+# invisible half carries on perfectly.
+install -m 0644 "$REPO/deploy/systemd/$DASHBOARD_UNIT" /etc/systemd/system/
+
 systemctl daemon-reload
-systemctl enable "$UNIT" "$FORWARDER_UNIT" "$SCHEDULER_TIMER" >/dev/null
-log "installed and enabled $UNIT and $FORWARDER_UNIT"
+systemctl enable "$UNIT" "$FORWARDER_UNIT" "$SCHEDULER_TIMER" "$DASHBOARD_UNIT" >/dev/null
+log "installed and enabled $UNIT, $FORWARDER_UNIT and $DASHBOARD_UNIT"
+
+if [[ -f "$REPO/backend/public/index.html" ]]; then
+    log "dashboard assets present"
+else
+    log "WARNING: no built dashboard in backend/public."
+    log "         The service will start and answer with a plain 503 saying so."
+    log "         Build it with: $REPO/deploy/build-dashboard.sh"
+fi
 
 echo
 echo "Install complete."
 echo
-echo "  Start:   systemctl start $UNIT $FORWARDER_UNIT $SCHEDULER_TIMER"
+echo "  Start:   systemctl start $UNIT $FORWARDER_UNIT $SCHEDULER_TIMER $DASHBOARD_UNIT"
 echo "  Status:  systemctl status $UNIT"
 echo "  Logs:    journalctl -u $UNIT -u $FORWARDER_UNIT -f"
 echo "  Token:   set QV_INGEST_TOKEN in $CONFIG_DIR/forwarder.env"

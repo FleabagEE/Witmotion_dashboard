@@ -360,7 +360,11 @@ did.
 ```bash
 docker compose up -d
 sudo ./deploy/install-acquisition.sh
+./deploy/build-dashboard.sh
 ```
+
+The dashboard is then at <http://127.0.0.1:8000>. It is served by the API
+process, not by a development server; see `docs/deployment.md`.
 
 ```bash
 sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-acq \
@@ -369,7 +373,15 @@ sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-acq \
 
 ```bash
 systemctl is-active quakevault-acq quakevault-forwarder quakevault-reverb \
-                    quakevault-live-bridge quakevault-scheduler.timer
+                    quakevault-live-bridge quakevault-scheduler.timer \
+                    quakevault-dashboard
+```
+
+**After any reboot** — the check that asks from outside whether the appliance
+actually came back, rather than whether its units are enabled:
+
+```bash
+acceptance/post-reboot.sh
 ```
 
 **Inspect registers** (the serial port is exclusive — stop acquisition first):
