@@ -11,6 +11,8 @@ SERVICE_USER="quakevault-acq"
 CONFIG_DIR="/etc/quakevault"
 STATE_DIR="/var/lib/quakevault-acq"
 UNIT="quakevault-acq.service"
+SCHEDULER_UNIT="quakevault-scheduler.service"
+SCHEDULER_TIMER="quakevault-scheduler.timer"
 FORWARDER_UNIT="quakevault-forwarder.service"
 
 log()  { printf '  %s\n' "$*"; }
@@ -122,19 +124,35 @@ fi
 echo "9. systemd units"
 install -m 0644 "$REPO/deploy/systemd/$UNIT" /etc/systemd/system/
 install -m 0644 "$REPO/deploy/systemd/$FORWARDER_UNIT" /etc/systemd/system/
+
+# The scheduler is not optional and was, for a long time, simply absent.
+#
+# tilt:check runs every five minutes and is the only thing that compares a
+# structure against its baseline and raises an alarm. An appliance without this
+# timer polls its sensors, stores every reading, serves a dashboard that looks
+# entirely healthy, and evaluates nothing. It shipped that way here and nobody
+# noticed until somebody asked whether tilting the sensor would trigger an alarm.
+install -m 0644 "$REPO/deploy/systemd/$SCHEDULER_UNIT" /etc/systemd/system/
+install -m 0644 "$REPO/deploy/systemd/$SCHEDULER_TIMER" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable "$UNIT" "$FORWARDER_UNIT" >/dev/null
+systemctl enable "$UNIT" "$FORWARDER_UNIT" "$SCHEDULER_TIMER" >/dev/null
 log "installed and enabled $UNIT and $FORWARDER_UNIT"
 
 echo
 echo "Install complete."
 echo
-echo "  Start:   systemctl start $UNIT $FORWARDER_UNIT"
+echo "  Start:   systemctl start $UNIT $FORWARDER_UNIT $SCHEDULER_TIMER"
 echo "  Status:  systemctl status $UNIT"
 echo "  Logs:    journalctl -u $UNIT -u $FORWARDER_UNIT -f"
 echo "  Token:   set QV_INGEST_TOKEN in $CONFIG_DIR/forwarder.env"
 echo "  Config:  $CONFIG_DIR/acquisition.yaml"
 echo "  Hardening report: systemd-analyze security $UNIT"
+echo
+echo "Scheduled evaluation runs from $SCHEDULER_TIMER. Without it the appliance"
+echo "polls, stores and displays normally and evaluates nothing - no settlement is"
+echo "compared against its baseline and no alarm can be raised. Confirm with:"
+echo
+echo "  systemctl list-timers $SCHEDULER_TIMER"
 echo
 echo "The service will not start until every configured sensor uses a profile"
 echo "marked 'verified'. That gate is deliberate: an unconfirmed register map"

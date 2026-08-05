@@ -545,3 +545,44 @@ both by design and both unresolved:
   gate. Nobody has put their name to 3°.
 
 On a remote silo, an alarm that only reaches a dashboard is not an alarm.
+
+## Nothing installed the scheduler (fixed 2026-08-04)
+
+The appliance ran for days with no Laravel scheduler. There was no cron entry and
+no systemd unit, so `tilt:check` — the only thing that compares a structure
+against its baseline and raises an alarm — had never executed once. Four other
+scheduled tasks had never run either.
+
+The appliance polled its sensors, stored every reading, served a dashboard with
+live charts and healthy sensors, and evaluated nothing.
+
+It was found because somebody asked whether tilting the sensor by hand would
+trigger an alarm. Both existing tests passed on the broken appliance:
+`alarms:test-notification` proves SMTP, and `alarms:selftest` drives the
+dispatcher directly. Neither goes near the scheduler, so neither could have
+noticed.
+
+**Fixed in three places, because one was how it happened.**
+
+- `deploy/systemd/quakevault-scheduler.{service,timer}` tick every minute.
+- `deploy/install-acquisition.sh` installs and enables them, so a new appliance
+  cannot ship without one. It previously installed only acquisition and the
+  forwarder.
+- Acceptance case 13 now requires the timer to be enabled, and a new case 14
+  asserts the heartbeat is under three minutes old. Enabled is not the same as
+  running: a timer can be enabled while its service fails on every tick, and
+  nothing downstream would say so.
+
+A heartbeat is written each tick and the System page leads with a critical
+banner when it goes stale.
+
+### The shape of this failure
+
+Three separate mechanisms on this appliance were complete, correct and never
+invoked: the calibration subsystem, the bus capacity model, and the scheduler.
+Each had a file format or an interface, working code behind it, and tests. None
+of them was wired to anything, and in every case the dashboard looked healthy.
+
+A test that exercises a component proves the component. Only a test that starts
+at the physical world — tilting the sensor, pulling the cable — proves the
+appliance.

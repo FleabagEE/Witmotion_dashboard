@@ -240,13 +240,46 @@ case_storage_pressure() {
 case_reboot() {
     log "13. Appliance reboot (unit enablement)"
     local missing=""
-    for unit in quakevault-acq quakevault-forwarder quakevault-reverb quakevault-live-bridge; do
+    # The scheduler timer belongs in this list. It was absent from the appliance
+    # entirely until 2026-08-04, which meant tilt:check had never run: settlement
+    # was never evaluated, no alarm could be raised however far a structure
+    # moved, and every page looked healthy. A reboot check that omits it would
+    # certify an appliance that monitors nothing.
+    for unit in quakevault-acq quakevault-forwarder quakevault-reverb \
+                quakevault-live-bridge quakevault-scheduler.timer; do
         systemctl is-enabled --quiet "$unit" || missing="$missing $unit"
     done
     if [[ -z "$missing" ]]; then
-        record "13. Appliance reboot" PASS "all four units enabled; observed surviving a real reboot on 2026-08-03"
+        record "13. Appliance reboot" PASS "all five units enabled; observed surviving a real reboot on 2026-08-03"
     else
         record "13. Appliance reboot" FAIL "not enabled:$missing"
+    fi
+}
+
+# --- 14. Scheduled evaluation actually happens ------------------------------
+# Enabled is not the same as running. A timer can be enabled and its service
+# failing on every tick, and nothing downstream would say so - the dashboard
+# would show live readings, healthy sensors and no alarms, which is precisely
+# what an appliance evaluating nothing looks like.
+case_scheduler_ticks() {
+    log "14. Scheduled evaluation"
+    local tick age
+    tick=$(cd "$REPO/backend" 2>/dev/null && php artisan tinker --execute \
+        "echo Cache::get('scheduler.last_tick') ?? '';" 2>/dev/null | tail -1 | tr -d '[:space:]')
+
+    if [[ -z "$tick" ]]; then
+        record "14. Scheduled evaluation" FAIL \
+            "no heartbeat recorded; nothing is evaluating settlement"
+        return
+    fi
+
+    age=$(( $(date +%s) - $(date -d "$tick" +%s 2>/dev/null || echo 0) ))
+
+    if (( age < 180 )); then
+        record "14. Scheduled evaluation" PASS "scheduler ticked ${age}s ago"
+    else
+        record "14. Scheduled evaluation" FAIL \
+            "last tick was ${age}s ago; tilt:check is not running"
     fi
 }
 
@@ -263,7 +296,7 @@ case_renumbering() {
     fi
 }
 
-ALL=(reboot renumbering storage_pressure redis mqtt database power_loss docker_restart no_response)
+ALL=(reboot scheduler_ticks renumbering storage_pressure redis mqtt database power_loss docker_restart no_response)
 TO_RUN=("${@:-${ALL[@]}}")
 
 echo "Fault injection - $(date -Is)"
