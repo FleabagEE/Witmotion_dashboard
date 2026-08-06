@@ -1,8 +1,17 @@
 [Unit]
 Description=QuakeVault dashboard and API
 Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
-After=network-online.target postgresql.service
-Wants=network-online.target
+After=network-online.target quakevault-stack.service
+Wants=network-online.target quakevault-stack.service
+
+# Ordered after the data stack, not hard-bound to it. Sessions and cache live in
+# Redis, so a dashboard that starts first answers every request with a
+# RedisException — which is exactly what a client saw on the morning of
+# 2026-08-06: an error page, on an appliance whose sensors had never stopped.
+#
+# Wants rather than Requires: if the stack genuinely cannot start, a dashboard
+# that comes up and reports the problem is worth more than one that refuses to
+# run and leaves a blank screen with no explanation.
 
 # The screen is the product. Sensors under systemd kept recording through a
 # power cut on this bench while the dashboard, started by hand in a terminal,

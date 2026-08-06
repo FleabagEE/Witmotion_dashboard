@@ -1,0 +1,37 @@
+[Unit]
+Description=QuakeVault data stack (TimescaleDB, Redis, Mosquitto)
+Documentation=file:/var/www/quakevault-industrial/docs/deployment.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+# Belt and braces over Docker's own restart policy, deliberately.
+#
+# The compose file already says `restart: unless-stopped`, and after a reboot on
+# 2026-08-05 the three containers were still down sixteen hours later. Whatever
+# the cause — and across four reboots in one evening the journal does not settle
+# it — the appliance is not the place to find out by inference. This unit states
+# the requirement instead of relying on a policy stored in the daemon's own
+# database, which is the thing that failed.
+#
+# What that outage cost: the dashboard threw RedisException on every page load,
+# so the client-facing screen was an error page. Acquisition kept polling and
+# the spool held all 187,671 readings, so nothing was lost — but nothing was
+# visible either, and the appliance was one day from the spool cap.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/var/www/quakevault-industrial
+ExecStart=/usr/bin/docker compose up -d
+
+# `stop`, not `down`. `down` removes containers and, on this stack, would take
+# the named volumes' bindings with it; the database must survive a restart of
+# the thing that starts it.
+ExecStop=/usr/bin/docker compose stop
+
+# Pulling images on a cold start is slow and must not be mistaken for a hang.
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

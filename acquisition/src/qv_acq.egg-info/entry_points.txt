@@ -4,3 +4,4 @@ qv-calibrate = qv_acq.calibrate_cli:main
 qv-forwarder = qv_acq.forwarder_service:main
 qv-probe = qv_acq.probe:main
 qv-set-address = qv_acq.address_cli:main
+qv-spool = qv_acq.spool_cli:main

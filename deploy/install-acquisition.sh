@@ -15,6 +15,7 @@ SCHEDULER_UNIT="quakevault-scheduler.service"
 SCHEDULER_TIMER="quakevault-scheduler.timer"
 FORWARDER_UNIT="quakevault-forwarder.service"
 DASHBOARD_UNIT="quakevault-dashboard.service"
+STACK_UNIT="quakevault-stack.service"
 
 log()  { printf '  %s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -143,9 +144,17 @@ install -m 0644 "$REPO/deploy/systemd/$SCHEDULER_TIMER" /etc/systemd/system/
 # invisible half carries on perfectly.
 install -m 0644 "$REPO/deploy/systemd/$DASHBOARD_UNIT" /etc/systemd/system/
 
+# The data stack the dashboard and API depend on. Compose already carries
+# `restart: unless-stopped` and that was not enough: after a reboot the three
+# containers stayed down for sixteen hours, and every page load threw a
+# RedisException. Stated as a unit rather than trusted to a policy inside the
+# daemon's own database.
+install -m 0644 "$REPO/deploy/systemd/$STACK_UNIT" /etc/systemd/system/
+
 systemctl daemon-reload
-systemctl enable "$UNIT" "$FORWARDER_UNIT" "$SCHEDULER_TIMER" "$DASHBOARD_UNIT" >/dev/null
-log "installed and enabled $UNIT, $FORWARDER_UNIT and $DASHBOARD_UNIT"
+systemctl enable "$UNIT" "$FORWARDER_UNIT" "$SCHEDULER_TIMER" "$DASHBOARD_UNIT" \
+                 "$STACK_UNIT" >/dev/null
+log "installed and enabled $UNIT, $FORWARDER_UNIT, $DASHBOARD_UNIT and $STACK_UNIT"
 
 if [[ -f "$REPO/backend/public/index.html" ]]; then
     log "dashboard assets present"
@@ -158,7 +167,7 @@ fi
 echo
 echo "Install complete."
 echo
-echo "  Start:   systemctl start $UNIT $FORWARDER_UNIT $SCHEDULER_TIMER $DASHBOARD_UNIT"
+echo "  Start:   systemctl start $STACK_UNIT $UNIT $FORWARDER_UNIT $SCHEDULER_TIMER $DASHBOARD_UNIT"
 echo "  Status:  systemctl status $UNIT"
 echo "  Logs:    journalctl -u $UNIT -u $FORWARDER_UNIT -f"
 echo "  Token:   set QV_INGEST_TOKEN in $CONFIG_DIR/forwarder.env"

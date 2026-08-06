@@ -31,17 +31,60 @@ echo "  against:  $BASE"
 echo
 
 echo "Units that must start themselves"
-for unit in quakevault-acq quakevault-forwarder quakevault-dashboard \
+
+# Started at boot, or started by hand afterwards?
+#
+# "enabled and active" is the check that let acceptance case 13 pass for weeks
+# while the appliance did not come back. It stays true if an operator - or
+# somebody debugging - starts the unit ten minutes later, which is exactly what
+# happened during the 2026-08-06 investigation: every unit read green on a
+# machine that had come up with three dead containers.
+#
+# So each unit is compared against the boot clock. Anything that started more
+# than a grace period after boot did not come back on its own, whatever its
+# current state says.
+BOOT_EPOCH=$(date -d "$(uptime -s)" +%s)
+GRACE=180
+
+for unit in quakevault-stack quakevault-acq quakevault-forwarder quakevault-dashboard \
             quakevault-scheduler.timer; do
     enabled=$(systemctl is-enabled "$unit" 2>&1)
     active=$(systemctl is-active "$unit" 2>&1)
 
-    # A timer is "active/waiting"; a service is "active/running". Both count.
-    if [[ "$enabled" == "enabled" && "$active" == "active" ]]; then
-        ok "$unit" "$enabled, $active"
-    else
+    if [[ "$enabled" != "enabled" || "$active" != "active" ]]; then
         bad "$unit" "$enabled, $active"
+        continue
     fi
+
+    started=$(systemctl show "$unit" -p ActiveEnterTimestamp --value 2>/dev/null)
+    started_epoch=$(date -d "$started" +%s 2>/dev/null || echo 0)
+    delay=$(( started_epoch - BOOT_EPOCH ))
+
+    # A timer is "active/waiting"; a service is "active/running". Both count.
+    if (( started_epoch == 0 )); then
+        ok "$unit" "$enabled, $active (start time unknown)"
+    elif (( delay <= GRACE )); then
+        ok "$unit" "came up ${delay}s after boot"
+    else
+        bad "$unit" "started ${delay}s after boot - by hand, not at boot"
+    fi
+done
+
+echo
+echo "The data plane"
+# Added after the second outage, and the reason for it.
+#
+# The first version of this script checked units, the dashboard and the sensors,
+# and would have passed while TimescaleDB and Redis were dead: acquisition would
+# still be recording to the spool, the units would all be active, and the
+# dashboard would be throwing RedisException at every visitor. Yesterday's
+# lesson was to finish at the user. This one is to check the floor as well as
+# the roof.
+for container in qv-timescaledb qv-redis qv-mosquitto; do
+    state=$(docker inspect "$container" --format '{{.State.Status}}' 2>/dev/null)
+    [[ "$state" == "running" ]] \
+        && ok "$container" "running" \
+        || bad "$container" "${state:-not found} - the stack did not come back"
 done
 
 echo
@@ -50,6 +93,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$BASE/" 2>/dev/null
 case "$code" in
     200) ok "dashboard answers" "HTTP 200" ;;
     503) bad "dashboard answers" "HTTP 503 - built assets missing, run deploy/build-dashboard.sh" ;;
+    500) bad "dashboard answers" "HTTP 500 - usually Redis or the database; check the data plane above" ;;
     *)   bad "dashboard answers" "HTTP ${code:-no response}" ;;
 esac
 
@@ -102,6 +146,15 @@ if [[ "$sensors" =~ ^[0-9]+$ && "$sensors" -ge 3 ]]; then
 else
     bad "all three sensors reporting" "${sensors:-query failed} reporting, expected 3"
 fi
+
+# Latency is survivable; loss is not. The spool absorbed a sixteen-hour outage
+# without losing a reading, and the only number that would have said otherwise
+# is this one.
+dropped=$(sudo -u quakevault-acq "$REPO/.venv/bin/qv-spool" status 2>/dev/null \
+          | grep -c "LOST" || true)
+[[ "$dropped" == "0" ]] \
+    && ok "no readings dropped at the spool cap" "nothing lost" \
+    || bad "no readings dropped at the spool cap" "run: qv-spool status"
 
 # The scheduler is the only thing that evaluates settlement. It was absent for
 # weeks and nothing looked wrong; see deploy/systemd/quakevault-scheduler.service.

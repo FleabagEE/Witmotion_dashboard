@@ -220,3 +220,80 @@ class TestProfileAnnouncement:
         assert not forwarder(spool, transport).announce_profile(
             "QV-EDGE-001", "SENSOR-001", profile, 0x50
         )
+
+
+class TestLongDrainStaysAlive:
+    """A drain that clears a real backlog must not look dead while it works.
+
+    The appliance lost its database for sixteen hours. The spool did its job and
+    held 84,000 records. When the database came back the forwarder began
+    replaying them correctly at roughly 59,000 rows a minute — and systemd
+    SIGABRTed it every two minutes for the entire recovery, because the watchdog
+    was pinged once per drain and a drain of that size takes seven minutes.
+
+    Progress survived, since delivery commits per batch. Two things did not: the
+    service looked like a crash loop, and its metrics stayed frozen at
+    "delivered 0, backlog 187671" throughout. The one moment an operator most
+    needs to watch recovery happen was the one moment the appliance reported
+    nothing at all.
+    """
+
+    def test_the_watchdog_is_pinged_for_every_batch_not_once_per_drain(self, spool):
+        for i in range(10):
+            spool.append(measurement(i))
+
+        forwarder = Forwarder(
+            spool, ForwarderConfig(token="t", batch_size=2), transport=StubTransport()
+        )
+
+        beats: list[int] = []
+        result = forwarder.drain_once(on_batch=lambda partial: beats.append(partial.delivered))
+
+        # Five batches of two. Without the hook this was zero pings across a
+        # call that, at real backlog sizes, runs for minutes.
+        assert result.batches == 5
+        assert len(beats) == 5
+
+    def test_progress_is_visible_while_the_drain_is_still_running(self, spool):
+        for i in range(6):
+            spool.append(measurement(i))
+
+        forwarder = Forwarder(
+            spool, ForwarderConfig(token="t", batch_size=2), transport=StubTransport()
+        )
+
+        seen: list[int] = []
+        forwarder.drain_once(on_batch=lambda partial: seen.append(partial.delivered))
+
+        # Monotonically rising, and reported before the call returns. A frozen
+        # counter is indistinguishable from a stalled forwarder.
+        assert seen == [2, 4, 6]
+
+    def test_a_failing_batch_does_not_report_phantom_progress(self, spool):
+        for i in range(4):
+            spool.append(measurement(i))
+
+        transport = StubTransport(responses=[(500, {})])
+        forwarder = Forwarder(
+            spool, ForwarderConfig(token="t", batch_size=2), transport=transport
+        )
+
+        seen: list[int] = []
+        result = forwarder.drain_once(on_batch=lambda partial: seen.append(partial.delivered))
+
+        # The hook fires on committed batches only. Pinging the watchdog on a
+        # failed delivery would keep a forwarder that cannot deliver anything
+        # alive and quiet, which is the opposite of what a watchdog is for.
+        assert seen == []
+        assert result.failures == 1
+
+    def test_drain_still_works_without_a_hook(self, spool):
+        # The service passes one; anything else calling this must not have to.
+        for i in range(4):
+            spool.append(measurement(i))
+
+        forwarder = Forwarder(
+            spool, ForwarderConfig(token="t", batch_size=2), transport=StubTransport()
+        )
+
+        assert forwarder.drain_once().delivered == 4

@@ -281,3 +281,85 @@ class TestRestartSafety:
         spool.append(make_measurement(1, run_id="run-xyz"))
         row = spool._db.execute("SELECT run_id FROM spool").fetchone()
         assert row["run_id"] == "run-xyz"
+
+
+class TestDeadLetterRecovery:
+    """Records parked by the retry ceiling must be recoverable.
+
+    The ceiling stops one poisonous record blocking the queue behind it. It
+    cannot tell a poisonous record from a healthy one that met a long outage,
+    and on 2026-08-06 that distinction cost 31,307 readings: a database down
+    overnight burned the retry budget of everything spooled during it, and two
+    and a half hours of measurements from all three sensors were parked for
+    good. The appliance counted them in a metric and had nothing that could act
+    on the number.
+    """
+
+    def test_parked_records_return_to_the_queue(self, tmp_path):
+        with Spool(tmp_path / "s.db") as spool:
+            for i in range(5):
+                spool.append(make_measurement(i))
+            ids = [r.id for r in spool.pending(5)]
+            for _ in range(10):
+                spool.mark_failed(ids, "HTTP 500")
+
+            assert spool.dead_letters(10) == 5
+            assert spool.pending(10, max_retries=10) == []
+
+            assert spool.revive_dead_letters(10) == 5
+
+            assert spool.dead_letters(10) == 0
+            assert len(spool.pending(10, max_retries=10)) == 5
+
+    def test_it_leaves_healthy_records_alone(self, tmp_path):
+        # Reviving must not reset the retry count of something still working
+        # through its budget; that would hide a genuinely failing record.
+        with Spool(tmp_path / "s.db") as spool:
+            for i in range(4):
+                spool.append(make_measurement(i))
+            ids = [r.id for r in spool.pending(4)]
+            spool.mark_failed(ids[:2], "HTTP 500")
+            for _ in range(10):
+                spool.mark_failed(ids[2:], "HTTP 500")
+
+            assert spool.revive_dead_letters(10) == 2
+
+            rows = {r.id: r.retry_count for r in spool.pending(10, max_retries=10)}
+            assert rows[ids[0]] == 1
+            assert rows[ids[1]] == 1
+
+    def test_delivered_records_are_never_resurrected(self, tmp_path):
+        with Spool(tmp_path / "s.db") as spool:
+            spool.append(make_measurement(1))
+            ids = [r.id for r in spool.pending(1)]
+            for _ in range(10):
+                spool.mark_failed(ids, "HTTP 500")
+            spool.mark_delivered(ids)
+
+            # Past the ceiling but delivered. Re-queueing it would send data
+            # that already landed and inflate the backlog with phantom work.
+            assert spool.revive_dead_letters(10) == 0
+            assert spool.backlog() == 0
+
+    def test_the_count_is_recorded(self, tmp_path):
+        # An operator action that changes the queue must leave a trace.
+        with Spool(tmp_path / "s.db") as spool:
+            spool.append(make_measurement(1))
+            ids = [r.id for r in spool.pending(1)]
+            for _ in range(10):
+                spool.mark_failed(ids, "HTTP 500")
+
+            spool.revive_dead_letters(10)
+
+            assert spool.counters()["dead_letters_revived"] == 1
+
+    def test_a_limit_is_respected(self, tmp_path):
+        with Spool(tmp_path / "s.db") as spool:
+            for i in range(6):
+                spool.append(make_measurement(i))
+            ids = [r.id for r in spool.pending(6)]
+            for _ in range(10):
+                spool.mark_failed(ids, "HTTP 500")
+
+            assert spool.revive_dead_letters(10, limit=2) == 2
+            assert spool.dead_letters(10) == 4

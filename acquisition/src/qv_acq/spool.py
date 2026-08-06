@@ -245,6 +245,45 @@ class Spool:
             ).fetchone()[0]
         )
 
+    def revive_dead_letters(self, max_retries: int, *, limit: int | None = None) -> int:
+        """Put records past the retry ceiling back in the queue.
+
+        The ceiling exists to stop one poisonous record blocking the queue
+        behind it for ever. It cannot tell a poisonous record from a healthy one
+        that met a long outage: a database down for hours burns the retry budget
+        of everything spooled during it, and those records are then parked for
+        good even though nothing is wrong with them.
+
+        That is what happened on 2026-08-06. Of 187,671 spooled readings, 31,307
+        crossed the ceiling while TimescaleDB was down — two hours and thirty-
+        eight minutes of real measurements from all three sensors, sitting on
+        disk, counted by a metric and reachable by nothing. The appliance could
+        say how much data it had stranded and offered no way to get it back.
+
+        Safe to run more than once: delivery is idempotent at the API, so a
+        record that did land before the retry counter was bumped is counted as a
+        duplicate rather than written twice.
+
+        Deliberately not automatic. If a record is genuinely undeliverable this
+        will cycle it to the ceiling again, and an operator choosing to retry is
+        the difference between recovering an outage and hiding a real fault.
+        """
+        sql = "UPDATE spool SET retry_count = 0, last_error = NULL WHERE id IN (" \
+              "SELECT id FROM spool WHERE delivered_at IS NULL AND retry_count >= ? ORDER BY id"
+        params: list[Any] = [max_retries]
+
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+
+        cursor = self._db.execute(sql + ")", params)
+        revived = cursor.rowcount or 0
+
+        if revived:
+            self._bump("dead_letters_revived", revived)
+
+        return revived
+
     def verify(self) -> list[int]:
         """Full checksum sweep. Returns the ids of corrupted rows."""
         bad = [

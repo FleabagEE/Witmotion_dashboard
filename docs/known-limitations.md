@@ -639,3 +639,83 @@ the reboot it asked the appliance about itself instead of asking what a person
 standing in front of the screen would see.
 
 Start at the physical world, and finish at the user.
+
+---
+
+## The outage the appliance survived, and the three faults it exposed (2026-08-06)
+
+The client opened the dashboard in Firefox and got `RedisException: Connection
+refused`. The appliance had rebooted the evening before and the three Docker
+containers — TimescaleDB, Redis, Mosquitto — never came back. Sixteen hours.
+
+**Nothing was lost.** That is the headline and it is worth stating first: the
+spool held all 187,671 readings on disk, `undelivered_dropped` was 0 throughout,
+and the appliance was roughly a day from the 500,000-row cap when it was caught.
+The design worked. What failed was everything around it.
+
+### 1. The data plane had no unit
+
+`docker-compose.yml` carries `restart: unless-stopped` and the containers were
+still down sixteen hours later. Across four reboots that evening the journal
+does not settle why, and an appliance is not the place to establish it by
+inference. `deploy/systemd/quakevault-stack.service` now states the requirement
+instead of trusting a policy held inside the daemon's own database, and the
+dashboard is ordered after it — `Wants`, not `Requires`, so a dashboard that can
+explain the problem beats one that refuses to start.
+
+### 2. The watchdog killed the recovery
+
+When the database came back, the forwarder began replaying correctly at about
+59,000 rows a minute. systemd SIGABRTed it every two minutes for the entire
+recovery.
+
+`drain_once()` loops until the spool is empty and the caller pinged the watchdog
+once per drain. With 84,000 records at a second per batch of 200, one honest
+call takes seven minutes against a `WatchdogSec=120`. Progress survived, because
+delivery commits per batch — but the service looked like a crash loop, and its
+metrics stayed frozen at `delivered 0, backlog 187671` for the duration. The one
+moment an operator most needs to watch recovery happen was the one moment the
+appliance reported nothing at all.
+
+The heartbeat and the metrics now fire per batch. **A spool that absorbs an
+outage and then trips the watchdog while draining has moved the outage rather
+than absorbed it.**
+
+### 3. Two and a half hours of data was parked with no way to get it back
+
+The retry ceiling exists so one poisonous record cannot block the queue behind
+it. It cannot tell a poisonous record from a healthy one that met a long outage:
+a database down for hours burns the retry budget of everything spooled during
+it. 31,307 readings — 02:02 to 04:40 UTC, all three sensors — were parked for
+good.
+
+The appliance counted them in a Prometheus gauge and shipped nothing that could
+act on the number. `qv-spool` is new: `status` answers "did we lose anything"
+without opening SQLite by hand, and `retry-dead-letters` returns parked records
+to the queue. Dry run by default, never automatic — an operator choosing to
+retry is the difference between recovering an outage and hiding a real fault.
+All 31,307 were recovered.
+
+### The check that passed while this was true
+
+`acceptance/post-reboot.sh` was written the day before precisely to catch this
+class of failure, and it half worked: it correctly failed the dashboard and the
+database. It had no idea the containers existed.
+
+Worse, it could be satisfied by hand. "Enabled and active" stays true when
+somebody starts a unit ten minutes after boot while debugging — which is exactly
+what happened during this investigation, and for a while the script read 15/15
+on a machine that had come up with three dead containers. It now compares each
+unit's `ActiveEnterTimestamp` against the boot clock and fails anything that
+started more than three minutes late, saying so in as many words: *started 1064s
+after boot — by hand, not at boot.*
+
+### The shape of this failure, a sixth time
+
+Yesterday's entry ended: *start at the physical world, and finish at the user.*
+That was right and incomplete. This check did finish at the user — it asked
+whether the dashboard answered — and still passed a broken appliance, because it
+never looked below the application at the things it stands on.
+
+Check the floor as well as the roof. And a verification that a human can satisfy
+by hand is not a verification.

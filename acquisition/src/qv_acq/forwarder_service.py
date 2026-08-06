@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from .config import DEFAULT_CONFIG_PATH, ApplianceConfig
-from .forwarder import Forwarder, ForwarderConfig
+from .forwarder import ForwardResult, Forwarder, ForwarderConfig
 from .metrics import MetricsRenderer
 from .profiles import loader
 from .sdnotify import SystemdNotifier
@@ -118,7 +118,23 @@ class ForwarderService:
         while not self._stop:
             if iterations is not None and completed >= iterations:
                 break
-            result = self.forwarder.drain_once()
+            # Heartbeat and metrics per batch, not per drain.
+            #
+            # A drain that clears a 16-hour backlog runs for minutes. Pinging
+            # only on return let the 2-minute watchdog kill a forwarder that
+            # was working perfectly, and left the metrics file frozen at
+            # "delivered 0" throughout — so the one moment an operator most
+            # needs to see recovery happening was the one moment the appliance
+            # reported nothing at all.
+            def progress(partial: ForwardResult) -> None:
+                self.notifier.watchdog()
+                self.write_metrics(partial)
+                self.notifier.status(
+                    f"draining: {partial.delivered} delivered, "
+                    f"{self.spool.backlog()} to go"
+                )
+
+            result = self.forwarder.drain_once(on_batch=progress)
             self.write_metrics(result)
             backlog = self.spool.backlog()
             self.notifier.watchdog()

@@ -22,6 +22,7 @@ src/qv_acq/probe.py
 src/qv_acq/sdnotify.py
 src/qv_acq/service.py
 src/qv_acq/spool.py
+src/qv_acq/spool_cli.py
 src/qv_acq/throughput.py
 src/qv_acq.egg-info/PKG-INFO
 src/qv_acq.egg-info/SOURCES.txt
@@ -37,6 +38,7 @@ src/qv_acq/simulator/device.py
 src/qv_acq/simulator/rtu.py
 src/qv_acq/simulator/server.py
 src/qv_acq/simulator/signals.py
+tests/test_address_cli.py
 tests/test_bus_capacity.py
 tests/test_calibration.py
 tests/test_calibration_wiring.py

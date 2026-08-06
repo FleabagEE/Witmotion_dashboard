@@ -35,9 +35,10 @@ Reproduce with `acceptance/fault-injection.sh` and
 | 18 | Docker restart | **PASS** | All three containers restarted; 6069 rows recovered, acquisition never stopped |
 | 19 | 24-hour soak | **RUNNING** | Started 2026-08-03 12:01; `acceptance/soak.sh --report` |
 | 20 | Storage pressure | **PASS** | 500 000-row cap enforced, `undelivered_dropped = 0` |
-| 21 | Whole appliance restarts itself | **PARTIAL** | `acceptance/post-reboot.sh` — 10/10 on 2026-08-05, but not yet run after a real reboot; see below |
+| 21 | Whole appliance restarts itself | **FAIL → fixed, unverified** | Real reboot 2026-08-05: the Docker stack never came back and the dashboard threw RedisException for 16 hours. No data lost. Fixes in place; not yet re-tested against a reboot |
+| 22 | Outage recovery drains without loss | **PASS** | 187,671 spooled readings replayed at ~59,000/min, `undelivered_dropped = 0`, including 31,307 recovered from dead-letter |
 
-**14 passed, 2 partial, 4 not tested, 1 running, 1 superseded.**
+**15 passed, 1 partial, 1 failed-then-fixed, 4 not tested, 1 running, 1 superseded.**
 
 ## Case 13 was true, and the appliance was still headless
 
@@ -58,15 +59,39 @@ sensors delivering rows — and only then looks at what is enabled. Same
 principle as the entry in `known-limitations.md`: a test that starts at the
 physical world is the only one that proves an appliance.
 
-### Case 21, and what it does not yet show
+### Case 21 failed for real on 2026-08-05, and this is what it cost
+
+Written the day before to catch exactly this, and it half worked: it correctly
+failed the dashboard and the database, and had no idea the three containers
+existed. Full account in `docs/known-limitations.md`.
+
+Three faults, in the order they bite:
+
+1. The Docker stack had no systemd unit. `restart: unless-stopped` was not
+   enough. Now `quakevault-stack.service`, with the dashboard ordered after it.
+2. The systemd watchdog SIGABRTed the forwarder every two minutes throughout
+   recovery, because `drain_once()` pinged it once per drain and a real backlog
+   takes minutes to clear. Heartbeat and metrics now fire per batch.
+3. 31,307 readings were parked past the retry ceiling by the outage, with no
+   tool able to act on them. `qv-spool retry-dead-letters` recovered all of
+   them.
+
+Nothing was lost at any point. The spool did its job.
+
+The check itself was also wrong in a way worth recording: "enabled and active"
+is satisfied by starting a unit by hand ten minutes after boot, and during this
+investigation the script briefly read 15/15 on a machine that had booted with
+three dead containers. It now times each unit against the boot clock.
+
+### What case 21 still does not show
 
 `acceptance/post-reboot.sh` passes 10 of 10 as of 2026-08-05 14:10, with the
 dashboard under `quakevault-dashboard.service`, enabled, and answering on
 127.0.0.1:8000. Restart-on-failure is proven: `systemctl kill -s KILL` was
 followed by the service returning on its own within three seconds.
 
-It is marked **PARTIAL** rather than PASS because this machine has not been
-rebooted since the unit was installed. Enablement and a `WantedBy` symlink are
+It is not PASS because this machine has not been rebooted since
+`quakevault-stack.service` was installed. Enablement and a `WantedBy` symlink are
 strong evidence and are not the same as having watched it happen. Reboot and
 run the script to close it:
 

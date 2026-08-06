@@ -187,7 +187,26 @@ class Forwarder:
         # they mean a previous attempt landed before we could mark it delivered.
         return 200 <= status < 300, {"status": status, **body}
 
-    def drain_once(self) -> ForwardResult:
+    def drain_once(self, on_batch: Callable[[ForwardResult], None] | None = None) -> ForwardResult:
+        """Deliver everything currently spooled.
+
+        `on_batch` is called after each successful batch, and exists because
+        this loop can legitimately run for a very long time. After a 16-hour
+        outage the spool held 84,000 records; at roughly a second per batch of
+        200 that is seven minutes of honest work inside one call.
+
+        Nothing observed that. The systemd watchdog was pinged by the caller
+        once per drain, so it fired at two minutes and SIGABRTed a forwarder
+        that was recovering correctly — every two minutes, for as long as the
+        backlog lasted. Progress survived, because delivery is committed per
+        batch, but the service looked like a crash loop and its metrics never
+        updated: the operator saw `delivered 0` and a frozen backlog while
+        59,000 rows a minute were going in.
+
+        The outage is exactly when this must not happen. A spool that survives
+        a failure and then trips the watchdog while draining has moved the
+        outage rather than absorbed it.
+        """
         result = ForwardResult()
 
         while True:
@@ -215,6 +234,8 @@ class Forwarder:
                         "%d envelope(s) rejected by the API: %s",
                         detail["rejected"], detail.get("errors", [])[:3],
                     )
+                if on_batch is not None:
+                    on_batch(result)
                 continue
 
             self.spool.mark_failed([r.id for r in records], f"HTTP {status}")

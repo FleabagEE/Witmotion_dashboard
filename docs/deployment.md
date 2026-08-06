@@ -13,6 +13,7 @@ everything below is written against.
 
 | Unit | What it does | If it stops |
 |---|---|---|
+| `quakevault-stack` | TimescaleDB, Redis and Mosquitto via Docker Compose | **The dashboard throws RedisException at every visitor.** Sensors keep recording to the spool and nothing is lost, but the screen is an error page |
 | `quakevault-acq` | Polls the sensors over RS-485 | No new readings. The dashboard keeps showing the old ones, so this failure is invisible without the health page |
 | `quakevault-forwarder` | Drains the local spool into the database | Readings accumulate on disk, nothing lost, dashboard freezes |
 | `quakevault-dashboard` | Serves the dashboard **and** the API | The screen is blank. Sensors keep recording |
@@ -21,11 +22,15 @@ everything below is written against.
 | `quakevault-live-bridge` | Redis → websocket bridge | Same as above |
 | `quakevault-kiosk` | Full-screen browser for a wall display | Optional; only installed where there is a screen |
 
-Two of those failure columns say the appliance looks healthy while doing
-nothing. Both were real: the scheduler was absent for weeks, and the dashboard
-was two hand-started processes until a power cut proved it. This is the reason
-`acceptance/post-reboot.sh` asks its questions from outside rather than reading
-the unit list.
+Three of those failure columns describe an appliance that looks healthy, or at
+least alive, while the client sees nothing useful. All three were real: the
+scheduler was absent for weeks, the dashboard was two hand-started processes
+until a power cut proved it, and the data stack stayed down for sixteen hours
+after a reboot while every sensor kept recording perfectly.
+
+This is why `acceptance/post-reboot.sh` asks its questions from outside — and
+why it checks the containers underneath the application as well as the screen
+in front of it.
 
 ---
 
@@ -34,7 +39,7 @@ the unit list.
 ```bash
 sudo ./deploy/install-acquisition.sh
 ./deploy/build-dashboard.sh
-sudo systemctl start quakevault-acq quakevault-forwarder \
+sudo systemctl start quakevault-stack quakevault-acq quakevault-forwarder \
                     quakevault-scheduler.timer quakevault-dashboard
 ```
 
@@ -106,13 +111,47 @@ nginx and php-fpm in front of it.
 acceptance/post-reboot.sh
 ```
 
-Ten checks, read-only, about half a minute. It asks whether the dashboard
-answers, whether its bundle loads, whether all three sensors are delivering
-rows, and whether the scheduler has ticked — then, last, what is enabled.
+Fifteen checks, read-only, about half a minute. It asks whether the containers
+are running, whether the dashboard answers, whether its bundle loads, whether
+all three sensors are delivering rows, and whether anything was lost.
+
+It also times every unit against the boot clock and fails anything that started
+more than three minutes late — *started 1064s after boot, by hand, not at boot*.
+That check exists because "enabled and active" is satisfiable by starting a unit
+yourself while debugging, and during the 2026-08-06 investigation the script
+briefly read all-green on a machine that had booted with three dead containers.
 
 Run it after every reboot and after every upgrade. A green run is the only
-evidence that matters; `systemctl is-enabled` looking right is not the same
-claim.
+evidence that matters.
+
+---
+
+## After an outage
+
+The spool absorbs a database or API outage by holding readings on disk. It has
+been measured against a sixteen-hour one: 187,671 readings held, none lost.
+
+```bash
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-spool status
+```
+
+The line that matters is `lost`. Everything else is latency, which the appliance
+recovers from on its own — expect roughly 59,000 rows a minute of replay, so an
+overnight outage clears in minutes.
+
+`parked` counts readings the retry ceiling gave up on. A long outage burns the
+retry budget of healthy records, so after one this number is usually recoverable
+data rather than a fault:
+
+```bash
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-spool retry-dead-letters --confirm
+```
+
+Dry run without `--confirm`. Re-running is safe — delivery is idempotent, so
+anything that already landed is counted as a duplicate rather than written
+twice. It is deliberately not automatic: if a record is genuinely undeliverable
+this cycles it back to the ceiling, and an operator making that choice is the
+difference between recovering an outage and hiding a real fault.
 
 ---
 
