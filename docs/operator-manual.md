@@ -131,3 +131,35 @@ moving.
 | Numbers 100× larger than usual | **Do not act on them.** The displacement range mode may have changed. Escalate |
 | A critical alarm that is **not** provisional | Follow your site's procedure — this one is against a confirmed threshold |
 | A critical alarm that **is** provisional | Note it, escalate for interpretation. It is not a compliance statement |
+
+---
+
+## When the dashboard says readings are behind
+
+You will see one of three messages above the movement figures. They mean
+different things and only one of them needs you to do anything.
+
+**"Readings are behind"** — the spool is holding readings the database has not
+caught up with yet. This is the appliance working. The readings are on disk and
+nothing is lost. It clears itself, usually within minutes. The figures on the
+page lag until it does.
+
+**"Readings are parked past the retry ceiling"** — a long outage stranded
+healthy readings. Nothing is lost, but they will not arrive until you release
+them. The banner shows the exact command; it asks for confirmation before doing
+anything, and running it twice is harmless.
+
+**"Readings are not being delivered"** — the forwarder has stopped. Sensors are
+still recording, but **every figure on the page is older than it looks**. Do not
+read the movement numbers as current. Report this one.
+
+If you see no banner at all, readings are arriving normally. That is the
+intended state and it is silent on purpose — a warning that is always on screen
+stops being read.
+
+### What none of these mean
+
+None of them means a sensor is broken. Sensor faults appear on the sensor cards
+and on the State of Health page, and they are a separate question. A perfectly
+healthy sensor can have a large backlog, and a dead sensor can have none.
+

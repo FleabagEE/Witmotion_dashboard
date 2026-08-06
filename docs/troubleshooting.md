@@ -246,3 +246,78 @@ php artisan measurements:check-units
 `v = 2πfA` ties displacement, velocity and frequency together, and the device
 reports all three independently. If they disagree by a factor of a hundred, a
 unit is wrong somewhere — which is something no register map can tell you.
+
+---
+
+## The dashboard shows an error page: `RedisException: Connection refused`
+
+The data stack is down. Sessions live in Redis, so every page load throws before
+it can render.
+
+```bash
+systemctl status quakevault-stack
+docker compose ps
+```
+
+Start it, and the dashboard recovers on the next request:
+
+```bash
+sudo systemctl start quakevault-stack
+```
+
+**Your readings are not lost.** Acquisition writes to a local spool that is
+independent of the database; it held sixteen hours of readings through exactly
+this failure on 2026-08-06 without dropping one. Confirm:
+
+```bash
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-spool status
+```
+
+The line that matters is `lost`.
+
+## The dashboard says "Readings are behind"
+
+The spool is holding readings the database has not caught up with. This is the
+spool working, not failing, and it clears itself at roughly 59,000 rows a
+minute — an overnight outage drains in a few minutes.
+
+Watch it go down:
+
+```bash
+systemctl status quakevault-forwarder
+```
+
+If the number is *growing* rather than shrinking while the database is up, the
+forwarder is losing the race and that is a real problem. Check the ingest API is
+answering and the database is not overloaded.
+
+## The dashboard says "Readings are not being delivered"
+
+The forwarder has stopped reporting. Sensors are still recording to disk, but
+nothing is moving those readings into the database, and **every figure on the
+dashboard is older than it looks**.
+
+```bash
+systemctl status quakevault-forwarder
+journalctl -u quakevault-forwarder -n 50
+sudo systemctl restart quakevault-forwarder
+```
+
+## The dashboard mentions readings "parked past the retry ceiling"
+
+A long outage burns the retry budget of perfectly healthy readings, and they get
+filed alongside genuinely undeliverable ones. 31,307 readings were stranded this
+way on 2026-08-06.
+
+```bash
+sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-spool retry-dead-letters
+```
+
+That is a dry run. Add `--confirm` to do it. Safe to repeat — delivery is
+idempotent, so anything that already landed counts as a duplicate rather than
+being written twice.
+
+It is deliberately manual. If a reading is genuinely undeliverable this cycles
+it straight back to the ceiling, and an operator making that call is what
+separates recovering from an outage from hiding a fault.
+

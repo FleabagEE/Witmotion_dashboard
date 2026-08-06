@@ -62,6 +62,19 @@ class MetricsRenderer:
         target.parent.mkdir(parents=True, exist_ok=True)
         temp = target.with_suffix(target.suffix + ".tmp")
         temp.write_text(self.render(), encoding="utf-8")
+
+        # World-readable, deliberately.
+        #
+        # These are counts of readings — backlog, delivered, dead letters. There
+        # is nothing here to protect, and the service umask was making them 0600
+        # and owned by quakevault-acq, so the dashboard running as a different
+        # account could not read its own appliance's delivery health.
+        #
+        # That mattered: during the outage of 2026-08-06 the one number that
+        # would have told an operator "the readings are safe on disk, be
+        # patient" was written every second to a file nothing else could open.
+        temp.chmod(0o644)
+
         os.replace(temp, target)  # atomic: a scrape never sees a partial file
 
 

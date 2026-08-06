@@ -471,11 +471,34 @@ export interface SensorHealthRow {
   checks: Record<string, { state: HealthState; detail: string }>
 }
 
+/**
+ * Whether readings are reaching the database, and if not, whether they are safe.
+ *
+ * Separate from sensor health on purpose. A sixteen-hour database outage leaves
+ * every sensor perfect and no reading arriving; sensor health alone reports
+ * that as silence, which reads as a broken instrument.
+ */
+export interface DeliveryHealth {
+  state: HealthState
+  summary: string
+  /** The command that resolves it, when one exists. */
+  action: string | null
+  /** Readings spooled but not yet written. Safe on disk. */
+  backlog: number | null
+  /** Parked past the retry ceiling. The one state that waits for a human. */
+  dead_letters: number | null
+  delivered_last_cycle: number | null
+  reported_at: string | null
+  age_seconds: number | null
+}
+
 export interface SensorHealthResponse {
   generated_at: string
   window_seconds: number
+  /** The worst state across the sensors. Excludes delivery, deliberately. */
   status: HealthState
   sensors: SensorHealthRow[]
+  delivery: DeliveryHealth
 }
 
 export interface StructureResponse {

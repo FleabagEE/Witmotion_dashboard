@@ -443,17 +443,23 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [generated_at, status, sensors]
+                required: [generated_at, status, sensors, delivery]
                 properties:
                   generated_at: { type: string, format: date-time }
                   window_seconds: { type: integer }
                   status:
                     type: string
                     enum: [pass, warn, fail, unknown]
-                    description: The worst state across every sensor.
+                    description: |
+                      The worst state across every sensor. Deliberately excludes
+                      `delivery`: a backlog is not a sick sensor, and folding
+                      the two would let a patient, correctly-working spool turn
+                      every instrument on the page amber.
                   sensors:
                     type: array
                     items: { $ref: "#/components/schemas/SensorHealth" }
+                  delivery:
+                    $ref: "#/components/schemas/DeliveryHealth" 
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/v1/structure:
@@ -1177,6 +1183,57 @@ components:
             Returned rather than dropped so a client can shade the period: the
             excluded history stays visible without setting the scale of an axis
             that has to resolve hundredths of a degree.
+
+    DeliveryHealth:
+      type: object
+      description: |
+        Whether readings are reaching the database, and if not, whether they are
+        safe.
+
+        A third question, separate from sensor health and from what the
+        structure did. During a sixteen-hour database outage on 2026-08-06 every
+        sensor was healthy, the structure was still, and no reading arrived.
+        Sensor health alone reports that as silence, which reads as a broken
+        instrument and sends somebody to check a cable that is not broken.
+
+        The distinction this carries: not arriving *and safe on disk* must never
+        look the same as not arriving *and being lost*.
+      required: [state, summary, backlog, dead_letters]
+      properties:
+        state:
+          type: string
+          enum: [pass, warn, fail, unknown]
+          description: |
+            `fail` means the forwarder has stopped reporting. `warn` means a
+            large backlog or readings parked past the retry ceiling - in both
+            cases the data is on disk and nothing is lost.
+        summary:
+          type: string
+          description: Plain language, written to be read by whoever is standing there.
+        action:
+          type: string
+          nullable: true
+          description: The command that resolves it, when one exists.
+        backlog:
+          type: integer
+          nullable: true
+          description: Readings spooled but not yet written to the database.
+        dead_letters:
+          type: integer
+          nullable: true
+          description: |
+            Readings parked past the retry ceiling. The only state here that
+            does not resolve itself: a long outage burns the retry budget of
+            perfectly healthy readings, and they wait for an operator.
+        delivered_last_cycle: { type: integer, nullable: true }
+        reported_at: { type: string, format: date-time, nullable: true }
+        age_seconds:
+          type: integer
+          nullable: true
+          description: |
+            How old the forwarder's own report is. Past two minutes the numbers
+            above describe a forwarder that has stopped, and reporting a healthy
+            backlog from a dead forwarder is worse than reporting nothing.
 
     SensorHealth:
       type: object

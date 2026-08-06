@@ -56,6 +56,7 @@ Each is a commit. Later phases assume earlier ones.
 | 6 | Dashboard restructure — multi-sensor, enterprise design | **done** |
 | 7 | Silo diagram with live sensor status | **done** |
 | 8 | Documentation, acceptance, tag | **done** |
+| 9 | Delivery health on the dashboard | **done** |
 
 ## Decisions taken
 
@@ -67,6 +68,12 @@ house style already agrees. Raised rather than silently substituted.
 **Design language follows the reference dashboard**: MetricCard tones, semantic
 StatusBadge, sidebar navigation, Tailwind with a dark theme. Adopted rather than
 invented so the two products look like siblings.
+
+**Delivery health is a third question.** Phase 9 added it after the outage of
+2026-08-06. "What did the structure do", "can the instruments be believed" and
+"are the readings arriving" are three different questions, and the third had no
+answer anywhere in the product. A healthy sensor whose readings are stuck on
+disk looks exactly like a still structure.
 
 **The dashboard is served by the API.** Phase 8 found the appliance did not
 survive a reboot: the frontend was a development server started by hand. It now

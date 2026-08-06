@@ -719,3 +719,63 @@ never looked below the application at the things it stands on.
 
 Check the floor as well as the roof. And a verification that a human can satisfy
 by hand is not a verification.
+
+---
+
+## Nothing in the product could say "your data is safe" (fixed 2026-08-06)
+
+A postscript to the outage above, and arguably the most useful thing to come out
+of it.
+
+For sixteen hours the appliance was in a state it had no vocabulary for. Every
+sensor was healthy. The structure was still. Not one reading reached the
+database. All three facts were true at once, and the product could express the
+first two and not the third.
+
+`SensorHealth` sees silence and says *"Silent for 900s. A dead sensor and a
+still structure look identical on a chart."* True in general, wrong here, and
+wrong in the expensive direction: it reads as a broken instrument and sends
+somebody out to a silo to check a cable that is not broken.
+
+The distinction that was missing:
+
+```
+readings not arriving — and safe on disk        be patient
+readings not arriving — and being lost          act now
+```
+
+The appliance knew which one it was. The forwarder wrote the backlog, the dead
+letter count and `undelivered_dropped` to a Prometheus file every second — mode
+0600, owned by `quakevault-acq`, unreadable by the account serving the
+dashboard. The one number that would have told an operator "nothing is lost, be
+patient" was being written continuously to a file nothing else could open.
+
+**Fixed.** `App\Services\DeliveryHealth` reads that file; `/api/v1/sensor-health`
+returns it as `delivery`; `DeliveryBanner` shows it above the movement figures
+when there is something to say and stays silent otherwise. Metrics are now
+written 0644, which they always should have been — they are counts of readings,
+with nothing in them to protect.
+
+Three decisions worth recording:
+
+**Delivery is not folded into the overall status.** A backlog is not a sick
+sensor. Collapsing them would let a patient, correctly-working spool turn every
+instrument on the page amber, and the page would then be lying about the
+hardware.
+
+**A stale metrics file is a failure, not a healthy backlog.** Past two minutes,
+every number in it describes a forwarder that has stopped. Reporting `backlog
+12, all fine` from a dead forwarder is worse than reporting nothing.
+
+**The banner says the figures are stale.** That is the actual harm — not the
+backlog itself but a movement reading from last night being read as current by
+somebody deciding whether a silo is safe.
+
+### The shape of this one
+
+Not a component nothing invoked. A *question the product never asked*. The data
+existed, the file was being written, every part worked — and no code path
+anywhere turned it into a sentence a human could read.
+
+Ask what the person standing in front of the screen needs to know, then check
+whether anything in the system is capable of telling them.

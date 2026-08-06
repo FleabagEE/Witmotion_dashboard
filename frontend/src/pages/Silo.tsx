@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, type HealthState, type SensorHealthRow } from '../lib/api'
 import { Empty } from '../components/ui'
 import { SiloDiagram } from '../components/SiloDiagram'
+import { DeliveryBanner } from '../components/DeliveryBanner'
 
 /**
  * The whole installation on one screen.
@@ -145,6 +146,11 @@ export function Silo() {
           State of health →
         </Link>
       </div>
+
+      {/* Above the movement figures, because it governs whether they can be
+          read as current at all. A stale number presented as live is worse than
+          no number. */}
+      <DeliveryBanner delivery={health.data?.delivery} />
 
       {/* Movement first, because it is the question. */}
       {structure.isLoading ? (
