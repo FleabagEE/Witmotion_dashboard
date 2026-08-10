@@ -238,6 +238,99 @@ it, or keep the human in the loop.
 where buffers belong — one you could apply to a system you have never seen.
 
 ---
+Lesson 1 — my answers
+Q1. Is oldest-first correct among undelivered rows?
+The case against it is stronger than the case for it, and it's the same insight the spool was built on.
+
+The spool only fills during an outage. Outages correlate with the events you care about — storms, blasting, power disturbance, the piling rig next door. So the readings oldest-first discards are the ones from the beginning of the outage, and the beginning of the outage is when whatever caused it happened.
+
+Concretely: lightning takes out the network at 02:00. The spool fills for 46 hours, hits the cap, and starts dropping the oldest — the readings from the moment of the strike, including the structure's response to it. You keep 46 hours of a quiet silo and discard the one minute that mattered.
+
+Newest-first is worse, though — you'd stop recording the present, and never be able to trust a "current" reading during a long outage.
+
+Neither is right. The right shape for SHM is decimation by significance:
+
+never drop a reading that participated in an alarm or crossed any threshold
+never drop the first and last reading of a contiguous run, so gap boundaries survive
+thin the quiet remainder uniformly — degrade resolution, not coverage
+That's the seismograph pattern: continuous low-rate plus triggered high-rate windows. Under pressure the spool should degrade toward that, not toward a truncated recording.
+
+What I'd need to know first:
+
+What fraction of readings are quiet? Here, overwhelmingly — 0.006–0.05 g against a 0.5 g warning. Decimation would buy enormous headroom.
+Is anything downstream rate-sensitive? This is decisive and it kills the idea. ADR-006 advertises spectra at 0.4× the measured rate. Non-uniform decimation invalidates every frequency claim the appliance makes. You cannot thin data that will be FFT'd.
+What outage is credible? 46 hours of headroom at 3 readings/s.
+Does anything depend on contiguity? The run-id and sequence machinery in ADR-010 suggests gap detection matters.
+Conclusion: oldest-first is defensible, but the stated reason is wrong. It's justified as "keep the recent," when the real justification is "keep the stream contiguous so the spectral claims stay valid." (2) beats (1).
+
+And the honest architect's answer: this policy has never executed. undelivered_dropped stayed 0 through a 16-hour outage. Don't redesign an untested policy — make reaching it visible. Warn at 70% of cap. That converts a silent data-loss decision into an operations decision while there's still a day to act.
+
+Q2. Keeping power-cut durability at 500/s
+(a) Group commit. Accumulate N readings or T ms, one transaction, one fsync. 500/s at 50 ms batches = 20 fsyncs/s.
+
+Trades away the guarantee itself. You lose up to T milliseconds on a power cut. "Lose nothing" becomes "lose at most 50 ms" — a different promise, and it must be written down as one. Also adds latency to the live path.
+
+(b) Move durability into hardware. Enterprise NVMe with power-loss-protection capacitors guarantees its own cache flush; synchronous=NORMAL becomes safe.
+
+Trades away visibility. You now depend on a hardware property nothing in software verifies. Someone swaps in a consumer SSD during a repair and durability disappears — no code change, no failing test, no symptom until the first power cut. That's the worst class of dependency: invisible and correct-looking. You'd need a startup check that refuses to run without PLP, and detecting that reliably is genuinely hard.
+
+(c) Own the log. Append-only segments with O_DSYNC, fsync per segment, torn-tail recovery — scan back from the end on restart and discard past the last valid checksum.
+
+Trades away someone else's testing. SQLite's WAL is exercised by millions of installations; your log is exercised by you. You also lose SQL over the spool, which qv-spool status depends on.
+
+How I'd rank them: (a) unless a bounded loss window is genuinely unacceptable — it usually is acceptable, and stating it honestly is better than pretending. (b) if it isn't, and you control procurement. (c) almost never, unless you ship enough units to amortise proving it.
+
+The distinction that matters: (a) changes the guarantee. (b) and (c) preserve it but relocate the risk — into procurement, or into your own code. Only one of the three requires updating the documentation, and that's the one people forget to update.
+
+Q3. Poison vs outage
+The discriminator is correlation. A poisonous record fails while its neighbours succeed. An outage fails everything. Three tiers:
+
+Tier 1 — status class. A 4xx (422 validation, 400 malformed) means the record is the problem and will never succeed. It should go to dead-letter on the first failure, not after ten. A 5xx or connection refused means the sink is the problem and should not count against the record at all. Today _deliver() treats 401/403 as fatal and everything else uniformly — so a malformed envelope burns ten retries, and a database outage burns the retry budget of perfectly healthy data. That's a concrete defect in this repo.
+
+Tier 2 — cohort correlation. A record's retry_count increments only when the failure was idiosyncratic — other records in the same batch or window succeeded. Whole-batch failure increments a sink-level counter and freezes the per-record ones.
+
+That's the freeze-don't-reset rule from Lesson 2 applied to the forwarder: distinguish "not evaluated" from "evaluated and failed." Same principle, different layer.
+
+Tier 3 — bisection. If a batch of 200 fails while the sink is demonstrably healthy, split and retry halves. Eight round trips isolates a single record. That yields a proof rather than an inference, and it's safe because delivery is idempotent anyway.
+
+Should it ship?
+Tiers 1–3, yes. They are classification, not action. A 422 will never succeed; refusing to burn retry budget during an outage cannot lose data. Both are strictly more correct than today.
+
+Automatic release of dead-letters, no — and not because humans are wiser.
+
+The dead-letter state is the only place this appliance says "I hold data I cannot deliver and I don't know why." If it can resolve that itself, the sentence is never uttered. Automatic recovery would have silently fixed the 31,307 stranded readings on 2026-08-06 — and nobody would have learned that a long outage burns the retry budget of healthy data. The design flaw would still be there, unfixed, waiting for a worse day.
+
+A mechanism that automatically hides the evidence of a design flaw prevents the design flaw from being fixed.
+
+Same reason ADR-015 makes a named person confirm a threshold.
+
+The nuance that makes this shippable: automatic classification plus automatic retry for records provably classified as outage-victims, keeping the human only for the ambiguous residue. That shrinks the dead-letter queue to actual poison — where a human decision is meaningful instead of clerical.
+
+Q4. A second spool between the database and MQTT?
+No. The rule:
+
+A buffer belongs at every boundary where the upstream side cannot be replayed, and nowhere else.
+
+Apply it:
+
+Boundary	Upstream replayable?	Verdict
+Acquisition → DB	No — the moment is gone forever	Buffer required ✓
+DB → MQTT	Yes — the database is the record	No buffer
+If an MQTT publish fails, re-read the row and publish again, any time. That's the crisp distinction:
+
+When upstream is replayable you don't need a buffer, you need a bookmark.
+
+A buffer is a copy; a cursor is a position. Copies must be kept consistent, evicted, checksummed, recovered. A cursor is one integer.
+
+A second spool here would be actively harmful:
+
+It duplicates the record, creating a second place that can disagree with the database.
+ADR-019 makes MQTT outbound-only precisely so a compromised broker cannot corrupt evidence. A spool feeding MQTT puts a copy of the evidence outside the database's integrity guarantees.
+ADR-020 establishes the live path as deliberately lossy — a dropped frame is fine because the durable path has it. Buffering the lossy path contradicts the decision that made it lossy.
+The corollary worth carrying to systems you've never seen: the cost of a missing buffer is data loss; the cost of an unnecessary buffer is a second source of truth. The second is usually worse, because it fails silently and you now have two answers to the same question with no way to tell which is right.
+
+What I would add: a per-topic cursor recording the last published measurement id, so a broker outage recovers by replaying from the database. One column, no duplication, no second truth.
+---
 
 ## 9. Read for yourself
 
