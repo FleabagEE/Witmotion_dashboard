@@ -238,7 +238,7 @@ it, or keep the human in the loop.
 where buffers belong — one you could apply to a system you have never seen.
 
 ---
-Lesson 1 — my answers
+##9. Lesson 1 — my answers
 Q1. Is oldest-first correct among undelivered rows?
 The case against it is stronger than the case for it, and it's the same insight the spool was built on.
 
@@ -332,7 +332,7 @@ The corollary worth carrying to systems you've never seen: the cost of a missing
 What I would add: a per-topic cursor recording the last published measurement id, so a broker outage recovers by replaying from the database. One column, no duplication, no second truth.
 ---
 
-## 9. Read for yourself
+## 10. Read for yourself
 
 | File | What to look for |
 |---|---|
