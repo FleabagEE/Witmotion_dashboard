@@ -278,8 +278,8 @@ The line that matters is `lost`.
 ## The dashboard says "Readings are behind"
 
 The spool is holding readings the database has not caught up with. This is the
-spool working, not failing, and it clears itself at roughly 59,000 rows a
-minute — an overnight outage drains in a few minutes.
+spool working, not failing, and it clears itself at roughly 2,600 measurement
+rows a second — an overnight outage drains in a few minutes.
 
 Watch it go down:
 

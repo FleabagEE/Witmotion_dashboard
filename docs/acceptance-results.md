@@ -36,7 +36,7 @@ Reproduce with `acceptance/fault-injection.sh` and
 | 19 | 24-hour soak | **RUNNING** | Started 2026-08-03 12:01; `acceptance/soak.sh --report` |
 | 20 | Storage pressure | **PASS** | 500 000-row cap enforced, `undelivered_dropped = 0` |
 | 21 | Whole appliance restarts itself | **FAIL → fixed, unverified** | Real reboot 2026-08-05: the Docker stack never came back and the dashboard threw RedisException for 16 hours. No data lost. Fixes in place; not yet re-tested against a reboot |
-| 22 | Outage recovery drains without loss | **PASS** | 187,671 spooled readings replayed at ~59,000/min, `undelivered_dropped = 0`, including 31,307 recovered from dead-letter |
+| 22 | Outage recovery drains without loss | **PASS** | 187,671 spooled readings replayed at ~2,600 rows/s (59,070 in a 20 s sample), `undelivered_dropped = 0`, including 31,307 recovered from dead-letter |
 
 **15 passed, 1 partial, 1 failed-then-fixed, 4 not tested, 1 running, 1 superseded.**
 

@@ -666,7 +666,7 @@ explain the problem beats one that refuses to start.
 ### 2. The watchdog killed the recovery
 
 When the database came back, the forwarder began replaying correctly at about
-59,000 rows a minute. systemd SIGABRTed it every two minutes for the entire
+2,600 rows a second. systemd SIGABRTed it every two minutes for the entire
 recovery.
 
 `drain_once()` loops until the spool is empty and the caller pinged the watchdog

@@ -136,8 +136,9 @@ sudo -u quakevault-acq /var/www/quakevault-industrial/.venv/bin/qv-spool status
 ```
 
 The line that matters is `lost`. Everything else is latency, which the appliance
-recovers from on its own — expect roughly 59,000 rows a minute of replay, so an
-overnight outage clears in minutes.
+recovers from on its own. Measured on 2026-08-06: 59,070 measurement rows
+landed in a 20-second sample, about 2,600 a second, and a sixteen-hour backlog
+cleared in a few minutes.
 
 `parked` counts readings the retry ceiling gave up on. A long outage burns the
 retry budget of healthy records, so after one this number is usually recoverable
