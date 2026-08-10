@@ -173,7 +173,8 @@ Q1. Keeping IMPLAUSIBLE readings
 The defence
 "Implausible" is a claim about the profile's declared range, not about physics. That range came from a datasheet, and this repo's entire posture (ADR-005) is that register maps and their metadata are suspect until verified.
 
-Discarding at the edge destroys the evidence needed to fix the map. When displacement reads 18,573 µm against a declared maximum, the interesting question is "is the range mode wrong?" — and known-limitations.md already records that the WTVB01-485's displacement range mode is invisible to the appliance. You can only answer that question with the values you'd have thrown away.o an implausible value today can raise a critical alarm and send an email; it pollutes every chart bucket's mean; and it corrupts max_value, which is worse than the mean because peak is exactly what an ISO assessment reads. It also enters the settlement calculation — the appliance's primary claim.
+Ans: Discarding at the edge destroys the evidence needed to fix the map. When displacement reads 18,573 µm against a declared maximum, the interesting question is "is the range mode wrong?" — and known-limitations.md already records that the WTVB01-485's displacement range mode is invisible to the appliance. You can only answer that question with the values you'd have thrown away. The asymmetry settles it: a bad value that is labelled bad is recoverable. A discarded good value is not. Keep and label is correct.
+ So an implausible value today can raise a critical alarm and send an email; it pollutes every chart bucket's mean; and it corrupts max_value, which is worse than the mean because peak is exactly what an ISO assessment reads. It also enters the settlement calculation — the appliance's primary claim.
 
 Storing quality beside the value creates an obligation on every reader. Obligations that live in documentation are the ones that get missed.
 
@@ -181,14 +182,73 @@ That is the same failure class as everything else in this repo: a mechanism that
 
 The guardrail
 Principle: make the safe path the default and the unsafe path explicit. Don't ask readers to remember.
+1. Stop exposing raw value to queries. Add a generated column or view value_good, NULL when quality <> 'good'. SQL aggregates skip NULLs, so avg(value_good) is automatically right. Anyone who genuinely wants everything must name value — now a visible, reviewable choice.
+2. Every aggregate carries samples and samples_good. A bucket that is 80% implausible must be able to say so, and the chart can render it differently instead of drawing a confident line through junk.
+3. Alarms require good quality. At minimum, mark events raised on implausible data as provisional. A critical alarm from an out-of-range value is precisely the false alarm that destroys trust in the whole system.
+4. A contract test that enumerates consumers — every query touching measurements must either filter quality or use value_good. That's the construction that makes the convention impossible to violate silently.
+And: alarm on the rate of implausible readings. SensorHealth warns above 1%. A channel going 100% implausible is a register-map or scaling fault, and that is the actual diagnosis worth shouting.
 
-The asymmetry settles it: a bad value that is labelled bad is recoverable. A discarded good value is not. Keep and label is correct.
+
+
 
 **2.** The CRC catches corruption but cannot detect that you polled the wrong slave ID and got a valid frame from the wrong device. Given that these sensors have no `WHO_AM_I` register, design a runtime identity check that would catch a mis-wired bus after a maintenance visit. What are its false-positive risks?
+ANS: The address isn't identity either — it's configurable at 0x1A. Swap two units between buses and both still answer where expected.
+Design: a commissioning fingerprint of {|a|, direction, temperature offset relative to the sensor mean, noise floor}, stored with the baseline. Recompute over a quiet window at every startup and daily. Divergence on ≥2 of 4 → "sensor identity uncertain, verify mounting."
+
+Two details that matter:
+
+It must run at startup, because a maintenance visit ends in a restart.
+Cross-match, don't just compare to history. A swap shows up as A now matching B's fingerprint and B matching A's. That's far stronger evidence than "A changed" — it's the signature of an exchange rather than a drift.
+The false-positive risks, and one is fatal
+The fingerprint is built from the measurand. A 3° structural tilt changes the gravity direction — that is the instrument doing its job. So "identity changed" and "the silo moved" are the same observation. You cannot separate them from inside.
+
+Also: recalibration legitimately changes the gain; thermal drift moves both temperature offset and tilt (already documented as dominating long-term); re-mounting the same sensor reads as a swap; and two units from the same production batch may have gains within noise of each other — which produces false negatives, the more dangerous direction.
+
+Honest conclusion: this check must be framed as "identity uncertain — confirm", never as an automatic fault. It is strongest immediately after a maintenance window, where a swap is plausible and structural change in that window is not, and weakest during continuous operation.
+
+Better: don't need it. Give each sensor a distinct firmware address (0x50/0x51/0x52) so a swap is detectable by address alone. qv-set-address already exists for this. Prevention beats fingerprinting; the fingerprint is the fallback for units that share an address.
+
 
 **3.** Plausibility limits come from the profile's declared `minimum`/`maximum`. Who sets those, and what happens when a real structural event legitimately exceeds them — a blast, an earthquake? Design the policy. Note that "widen the limits" and "trust the sensor" are the same decision viewed from two ends.
+ANS: The framing that resolves this: the limit is a statement about the instrument, not about the structure.
+
+Outside the device's range → not a measurement at all. The device cannot represent it, so the reading is an artifact.
+Inside the device's range but outside what you expect structurally → a completely different thing, and calling it implausible is the error.
+Policy: plausibility limits are device measurement limits, never engineering expectations. If the part measures ±16 g, the bound is ±16 g. A blast producing 12 g is GOOD data that happens to be alarming. Setting the bound at 2 g "because a silo shouldn't exceed that" makes the instrument blind to exactly the events it exists for.
+
+Then a real event exceeding the device range is saturation, which deserves its own quality state — not IMPLAUSIBLE, and certainly not GOOD. A saturated reading means "the event was at least this big", which is real information that must never be averaged as if it were a measurement. Add SATURATED to QualityStatus.
+
+Full policy:
+
+1. Limits = datasheet device range, with provenance under ADR-005's verification gate.
+2. Never field-adjustable. Changing them is a profile version bump, reviewed, with the reason recorded.
+3. Structural expectations live in alarm thresholds — separate, confirmable by a named person (ADR-015), and freely adjustable.
+4. SATURATED where the raw register sits at its rail.
+5. When events genuinely exceed the device range, the fix is hardware — a wider-range sensor — not a metadata edit.
+Your observation is exactly right, and it's why (2) matters: widening a limit after an event trips it is retroactively deciding to believe data you previously declared unbelievable, with no new evidence. That is editing the record.
+
 
 **4.** Modbus leaves 32-bit word order unspecified, so this repo made it per-channel configuration. Name two other places in *any* embedded protocol you know where the specification is silent and vendors diverged. For each, say whether you would handle it by configuration, by auto-detection, or by refusing to support the ambiguous case — and why.
+ANS: Q4. Two more places the spec is silent
+(1) Modbus RTU inter-frame timing above 19200 baud → configuration.
+
+The spec says 3.5 character times idle between frames, then says above 19200 baud use fixed 1.75 ms / 0.75 ms. Plenty of vendors keep scaling by character time, and USB-serial bridges wreck the timing anyway by batching bytes. Two masters, same wire, different framing decisions.
+
+Configuration, because the failure is intermittent and load-dependent. An auto-detector sampling a quiet bus will confidently conclude something that stops being true under load. Ship a tool that measures and recommends; make a human write it down — same shape as the turnaround measurement.
+
+(2) I²C repeated-start vs stop-then-start on register reads → refuse.
+
+The spec permits both; some parts require repeated-start and lock up on stop-start. This is the case where the wrong guess doesn't give you wrong data — it wedges the bus, and recovery needs a power cycle or nine manual clock pulses.
+
+Auto-detection is impossible when the failure mode is "the bus stops responding." Configuration is nearly as bad, because a wrong config is discovered in the field at 3 a.m. So: support only the sequence the part's datasheet explicitly states, and refuse to run a device whose datasheet doesn't state it. That refusal is the same instinct as ADR-005 refusing to let unverified register maps drive alarms.
+
+(Worth noting: CAN has this identically — the standard says nothing about byte order for multi-byte signals, which is why DBC files carry per-signal Intel/Motorola. The industry landed exactly where this repo did on Modbus word order. When a spec is silent about representation, configuration wins, because the ambiguity is stable per-device and knowable in advance.)
+
+And where auto-detection is right — completing the triad: scaling ambiguities like 0.1 °C vs 0.01 °C units, where 2640 / 264 / 26.4 is instantly discriminable against a plausible physical range. Detect it, then pin it and alarm if it ever changes.
+
+Auto-detect when a wrong guess is loudly and immediately wrong.
+Configure when a wrong guess is quietly and plausibly wrong.
+Refuse when a wrong guess damages the bus or the device.
 
 ---
 
