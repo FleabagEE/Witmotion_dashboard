@@ -235,5 +235,111 @@ Answer as an architect. As before, some of these have no clean answer.
 **4.** Sharpest one. The single-worker executor makes bus serialisation true by construction. Name three other hazards in an embedded system that are usually handled by convention — a documented rule, a code review checklist, a comment — and for each, propose a construction that makes violation impossible. Then say honestly which of your three constructions costs more than the rule it replaces.
 
 ---
+1. What it costs
+First, a correction that makes it worse: the breaker isn't per sensor. acquisition/src/qv_acq/engine.py:101 is "Scheduling state, breaker and metrics for one (sensor, group) pair", and the WTVB01-485 profile has six register groups. Three sensors on one bus is 18 breakers, not 3.
+
+The sharp cost isn't wasted CPU. It's that the parameter which made the breaker safe is the one that makes it dangerous at scale.
+
+breaker_cooldown_seconds: 5.0 was sized for one dead device on a healthy bus — one probe per 5 s, ~20% duty, harmless. Apply it to 18 tasks with the bus down:
+
+RS-485 is half-duplex, one serialised thread. It can service roughly one probe per second. You are demanding three to four times what exists, permanently. The cooldown throttles nothing; the line saturates with probes for the entire fault.
+
+And because motion polls at 10 Hz while the other five groups poll at 1 Hz, those breakers cross the threshold at different moments and their cooldowns drift permanently out of phase. It isn't a storm you can characterise — it's an irregular dribble, forever.
+
+Second cost, and worse: 18 alarms saying "sensor offline" and none saying "bus down." The appliance has no vocabulary for the medium failed. It can only make claims about devices, so a wiring fault is reported as 18 simultaneous device failures — technically true, operationally a lie, and it sends a technician up a silo with the wrong spare part.
+
+2. The premise is false — check it against the code
+Before designing anything, read acquisition/src/qv_acq/engine.py:140:
+
+The loop advances next_due until it is strictly greater than now. It does not fire back-to-back. It already does exactly what the question calls "the alternative": jump to the next future slot and record the gap. The comment above it says so.
+
+After a 30-second stall at 10 Hz: 300 iterations, next_due lands one interval in the future, missed_polls += 299, and due() returns False until the next real slot.
+
+The question is authoritative-sounding and wrong about the code in front of it. That is the single most useful thing in this lesson. A convincing description of a defect is not evidence of one — I have made this exact mistake in this repo twice this week, and both times the code was right and my reading was not.
+
+One genuine observation the question missed: the loop is O(gap ÷ interval). A suspended laptop resuming after four hours gives 144,000 iterations per task × 18 tasks. Harmless here, but it's an unbounded loop over wall-clock time where floor() division would be O(1). That's the real (minor) defect.
+
+The underlying question is still worth answering
+(a) This silo — realign and count. Correct as built.
+
+Catch-up would be actively dishonest. The polls would fire now and be stamped now, fabricating a burst of readings that describes a moment the sensor was never asked about. You'd be inventing data whose only property is that it looks continuous. For settlement monitoring, a recorded gap is information; a fabricated burst is corruption.
+
+(b) Servo loop — neither.
+
+A missed deadline in a control loop is not a scheduling event, it is a failure. Catch-up is the worst option available: applying a stale command to a plant that has since moved is how you get instability, overshoot, or a broken axis. Realign-and-count is barely better, because it silently accepts that the controller's model of time no longer matches reality.
+
+The correct behaviour is to detect the overrun and act: hold the last safe output, degrade to a reduced-authority mode, or fault the axis. In hard real-time, a deadline miss is a safety event with a defined response, not a statistic.
+
+(c) Billing meter — change the measurement so the question disappears.
+
+Neither policy is right, because sampling is the wrong model. A billing meter must not lose the integral, and any sampling scheme makes revenue a function of scheduler jitter.
+
+The answer is to read a monotonic cumulative counter from the device rather than an instantaneous rate. Then a missed poll costs resolution and never costs money — the device did the integration, and you're only reading a total that is correct whenever you happen to read it.
+
+The architectural move is not choosing a scheduling policy. It's noticing that for one of the three systems, the right fix is to make the measured quantity immune to scheduling.
+
+3. The turnaround feedback loop
+First, the docstring contains a design error:
+
+#: Measured per device during commissioning and written back into the profile.
+
+It must not go in the profile. ADR-004 says profiles are data describing a sensor model. Turnaround is not a property of the WTVB01-485 — it's a property of this installation: this cable length, this CH341, this temperature. Writing it into the shared model means one silo's 40-metre run silently changes the capacity model for every appliance that ever loads that profile.
+
+It belongs where calibration and tilt baselines already live: per-sensor commissioning data.
+
+Who measures: the engine, continuously — not a commissioning tool. TaskRuntime already keeps a _latencies deque; turnaround is observed transaction time minus computed wire time. A number measured once on a bench, at bench temperature, with a bench cable, describes a bench.
+
+When it becomes eligible: use p95, not the mean — capacity must be sized for the slow tail, and a mean is exactly the statistic that hides it. Require a minimum sample count and a minimum window (say 10,000 transactions and one hour), and require two independent windows to agree before the value is even proposed.
+
+Guard the estimator, or it measures the wrong thing: discard samples taken while the breaker is not CLOSED, during startup, or on any transaction that involved a retry. A retried transaction's latency is not turnaround — it's a timeout plus a turnaround, and folding those together produces a number that grows every time the bus has a bad day.
+
+If the measurement makes the running config unschedulable — three outcomes, none automatic:
+
+Measured utilisation	Action
+< 0.65	Adopt. Good news, no decision needed.
+0.65 – 1.0	Provisional finding. Keep polling — the bus is empirically coping, since we measured it while it ran. Surface it for an engineer.
+≥ 1.0	Fault. The configuration is impossible and the appliance's own behaviour is the evidence.
+Even at ≥ 1.0, do not auto-reduce the rate. Silently lowering the sample rate changes what the instrument is: the advertised spectral limit is 0.4× the measured rate (ADR-006), so every downstream claim shifts under the operator without anyone deciding. The appliance already reports measured rate alongside configured — that honesty is the mechanism. Let it show the discrepancy; don't let it resolve the discrepancy by itself.
+
+How a bad measurement is prevented from reducing the rate: by construction. Nothing auto-applies. The loop proposes, a human disposes — the same shape as retry-dead-letters --confirm and ADR-015's named threshold confirmation. This repo has the pattern twice already; a third use needs no new invention.
+
+And record provenance with the number: sample count, window, adapter chip, temperature. A capacity figure with no provenance is the unverified-register-map problem in ADR-005 wearing different clothes.
+
+4. Convention → construction
+Hazard 1: ISR-context vs task-context APIs
+xQueueSendFromISR from a task, or xQueueSend from an ISR, compiles cleanly and corrupts the scheduler intermittently. The protection is a naming suffix and documentation.
+
+Construction: make context a type. The queue's send method requires an IsrContext token constructible only by the interrupt prologue. Rust does this natively; in C an opaque struct passed by the ISR shim gets most of the way.
+
+Cost: cheaper than the rule. Some parameter threading and a few duplicated helpers, against a failure that is silent, intermittent, and typically found on someone else's hardware.
+
+Hazard 2: Units
+This repo ships an artisan command, measurements:check-units. That command is a runtime check standing in for a missing type — µm vs mm, g vs m/s², and the WTVB01-485 reports displacement in µm from a register whose range mode isn't readable.
+
+Construction: newtypes. Micrometres and Millimetres with no implicit conversion; arithmetic that refuses mismatched units. Violation becomes inexpressible.
+
+Cost: moderate, and worth it. Noisier arithmetic, explicit unwrapping at serialisation boundaries, some runtime cost in Python. But an entire command plus documentation currently exists to catch what a type would prevent for free.
+
+Hazard 3: Exclusive access to the bus — the one that costs more
+In-process serialisation is already by construction: ThreadPoolExecutor(max_workers=1). Excellent, and the reason bus interleaving cannot happen within the service.
+
+Across processes it is PortLock — advisory. A process that doesn't ask still gets the port. Run qv-probe while quakevault-acq is running and you interleave frames on a half-duplex line. The protection is the convention "everything takes the lock."
+
+Construction: OS-level exclusive ownership. The udev rule gives the node to quakevault-acq alone; every operator tool goes through a control socket rather than opening the port.
+
+Cost: higher than the rule it replaces, and I would not build it.
+
+qv-probe, qv-set-address and qv-calibrate exist precisely for the situation where the service is stopped and you are debugging hardware. Routing them through the running service inverts the dependency: the tools you need when things are broken now require the broken thing to be working. That is a worse failure than the interleaving it prevents.
+
+I'd keep the convention and make it loud instead — the tools should detect the lock, refuse to start, and say "stop quakevault-acq first."
+
+The general rule
+Constructions that move a check to compile time or the type system are almost always cheaper than the rule they replace.
+
+Constructions that require new runtime coordination — IPC, brokers, ownership protocols — usually cost more, and frequently relocate the failure rather than removing it.
+
+Hazards 1 and 2 are the first kind. Hazard 3 is the second, and recognising that is worth more than building it.
+
+
 
 *Next: Lesson 3 — The Wire (`crc.py`, `decode.py`, `client.py`): framing, checksums, byte order, plausibility limits, and where trust in a sensor ends.*
