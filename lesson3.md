@@ -169,6 +169,20 @@ Strip the claim and everything downstream is forced to assume total confidence �
 ## Design questions
 
 **1.** `IMPLAUSIBLE` readings are kept and forwarded rather than discarded. Defend that choice, then argue the opposite: what damage can an implausible value do once it is in a time-series database that downstream code may query without checking quality? Design the guardrail.
+Q1. Keeping IMPLAUSIBLE readings
+The defence
+"Implausible" is a claim about the profile's declared range, not about physics. That range came from a datasheet, and this repo's entire posture (ADR-005) is that register maps and their metadata are suspect until verified.
+
+Discarding at the edge destroys the evidence needed to fix the map. When displacement reads 18,573 µm against a declared maximum, the interesting question is "is the range mode wrong?" — and known-limitations.md already records that the WTVB01-485's displacement range mode is invisible to the appliance. You can only answer that question with the values you'd have thrown away.o an implausible value today can raise a critical alarm and send an email; it pollutes every chart bucket's mean; and it corrupts max_value, which is worse than the mean because peak is exactly what an ISO assessment reads. It also enters the settlement calculation — the appliance's primary claim.
+
+Storing quality beside the value creates an obligation on every reader. Obligations that live in documentation are the ones that get missed.
+
+That is the same failure class as everything else in this repo: a mechanism that exists and isn't invoked.
+
+The guardrail
+Principle: make the safe path the default and the unsafe path explicit. Don't ask readers to remember.
+
+The asymmetry settles it: a bad value that is labelled bad is recoverable. A discarded good value is not. Keep and label is correct.
 
 **2.** The CRC catches corruption but cannot detect that you polled the wrong slave ID and got a valid frame from the wrong device. Given that these sensors have no `WHO_AM_I` register, design a runtime identity check that would catch a mis-wired bus after a maintenance visit. What are its false-positive risks?
 
