@@ -245,29 +245,45 @@ If the token could read, I would answer differently — the window would need to
 
 And one thing about the current design regardless: exit 2 requires a human either way. Between silently absent and loudly broken, loudly broken is strictly better — the appliance should stay up, keep spooling, and keep saying what is wrong.
 
-Q2. batch_uid — the collision is live
-The re-batching scenario in the question is real, but there is a simpler defect underneath it. Checked on your appliance just now:
+Q2 — answered properly
+The re-batching scenarios
+Batch composition comes from spool.pending(batch_size, max_retries) — ORDER BY id LIMIT 200 over undelivered records whose retry count is under the ceiling. So the batch is "the oldest 200 still-eligible records", and the uid is the key of whichever record happens to be first.
 
-And in the recorded data:
+That set is not stable. Three things change it while leaving the same record at the front:
 
-Truncated mid-group-key. The sequence number — the only part that varies between batches — is cut off entirely.
+(a) Dead-letter revival — the real one.
 
-So every batch from that (appliance, run, sensor, group) shares one batch_uid. With insertOrIgnore, only the first is ever recorded. 551 batch rows exist for hundreds of thousands of delivered records.
+Same first record, entirely different contents. This is not hypothetical — it happened on 2026-08-06 when 31,307 records were revived.
 
-What is actually damaged
-Not your measurements. Those deduplicate on their own full key in ingested_polls, which is not truncated. The audit trail is damaged — ingest_batches is supposed to record what was offered, accepted, rejected and when, and most of it was silently discarded.
+(b) A batch-size change. Edit batch_size from 200 to 500 and restart. If R1 is still undelivered, batch A was R1…R200 and batch B is R1…R500. Same uid. A config edit is enough.
 
-That is the table you would reach for to answer "what did the appliance send us on the night of the 4th?"
+(c) Not a collision, worth naming: a batch that fails wholesale and is retried unchanged produces the same uid correctly — that's an idempotent retry, and recognising it is the feature.
 
-The re-batching case, which also holds
-After retry-dead-letters revives records, or after the cap prunes some, pending() can return a different 200 records that happen to start with the same record. Same batch_uid, different contents — and the surviving audit row describes the wrong batch. If the first was partial and the second fully accepted, the record says partial for ever.
+What "false duplicate" means here
+ingest_batches has batch_uid unique and is written with insertOrIgnore. So a colliding new batch is silently discarded — the system concludes "seen this one already" when it has not.
+
+Precisely: the measurements survive (they deduplicate on their own full key in a different table), but the audit row is lost, and the surviving row describes a different batch. If the first was partial and the second fully accepted, the record says partial for ever.
+
+The bigger defect underneath
+Checking the live data made the above almost irrelevant: run_id is 32 hex characters, so the key reaches 73 and [:64] cut the sequence off entirely. Every batch from one (appliance, run, sensor, group) collided, constantly, with no re-batching required. 551 audit rows existed for hundreds of thousands of records.
 
 Better identity
-A content hash. Identical retries collide — which is correct, that is the same batch. Different contents never collide. And 64 hex chars fits exactly.
+Content-addressed. Same records = same batch (correct for retries), different records cannot collide, sorted so re-ordering doesn't matter, and SHA-256 hex is exactly the column width — nothing truncated, and nothing can be.
 
-Cost: you can no longer tell two genuine retries apart, so per-attempt timing analysis needs a second field. If you want both, keep a random attempt_uid alongside the content hash. Hashing 200 short strings is free.
+What it costs
+1. You lose grep-ability. QV-EDGE-001:…:SENSOR-002:motion:8 told you at a glance which appliance, run and sensor it came from. 40ac2c70e434… tells you nothing. Mitigated because ingest_batches already stores appliance_id separately — but it's a genuine loss for someone reading logs.
 
-This one is a live defect, not an exercise. Want it fixed?
+2. You cannot distinguish attempts. Two deliveries of identical content are indistinguishable, so per-attempt latency analysis needs a second column (attempt_uid, random per POST). I did not add one; if you ever want "how many times did we retry this batch", that's the cost.
+
+3. It isn't time-ordered. A ULID or UUIDv7 would sort chronologically; a hash doesn't. received_at covers it here.
+
+4. The sharpest one: a deliberate replay is silently absorbed. If you ever re-offer an old spool on purpose — disaster recovery, migrating an appliance — the identical content hashes to the identical uid and the second delivery leaves no audit row. Arguably correct (it is the same batch), arguably hides a real operational event. A random attempt_uid alongside is the fix, and is the version I'd build if this appliance ever supports replay.
+
+5. Hashing 200 short strings per batch. Microseconds. Not a real cost.
+
+The alternative — a random UUID per attempt — trades exactly the opposite way: never collides, but a lost-response retry creates a second audit row for one batch and you lose retry recognition. Content hash for identity, random id for occurrence is the complete answer; I shipped the first half because it's what fixes the live defect.
+
+
 
 Q3. Automatic poison/outage discriminator
 The mechanism, in increasing cost and confidence:
