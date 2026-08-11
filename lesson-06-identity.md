@@ -330,7 +330,7 @@ whether it survives a determined contributor.
 
 
 
-Lesson 6 — Design question answers
+
 Q1. Detecting an undeclared swap
 I can't answer this blind. I ran it, and I got it wrong — so let me give you the reasoning I should have had, then what actually happened.
 
