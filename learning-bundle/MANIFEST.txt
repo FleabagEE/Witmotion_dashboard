@@ -1,0 +1,26 @@
+# Manifest
+
+source commit   618196d
+source branch   master
+commit date     2026-08-12
+
+   LINES  FILE
+   -----  ----
+     537  acceptance-results.md
+     493  architecture-summary.md
+     433  course/lesson-01-the-spool.md
+     327  course/lesson-02-the-acquisition-engine.md
+     291  course/lesson-03-the-wire.md
+     332  course/lesson-04-profiles-as-data.md
+     367  course/lesson-05-the-forwarder.md
+     404  course/lesson-06-identity.md
+     204  course/README.md
+     705  decision-log.md
+    1090  fixproblem.md
+      58  INDEX.md
+    1378  known-limitations.md
+     855  question.md
+     420  register-maps.md
+      91  testing.md
+
+    7985  total
