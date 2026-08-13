@@ -267,6 +267,133 @@ And the meta-lesson, which this repository paid for in incidents rather than rea
 
 **4.** The capstone. You are architecting a *new* appliance — different sensors, different structure, different client. Which three decisions from this repository would you carry over unchanged, and which one would you deliberately make differently? Justify all four, and be specific about the conditions under which your changed decision would be wrong.
 
+Q1 — One number for the boardroom
+Build it. The request is legitimate, and refusing it means somebody builds it in a spreadsheet from three endpoints they don't understand.
+
+But be precise about what it's for. A board's action space is binary: does this need my attention this quarter? One colour answers that. The same colour cannot dispatch a technician, and the design has to stop it being used that way.
+
+The aggregation
+The rule that carries the whole design: green requires evidence, not absence of bad news.
+
+Fail any input — including "we don't know" — and it is not green. On 2026-08-05 this appliance had healthy sensors, a still structure, and nothing reaching the database for sixteen hours. A naive worst-of over two services returns green. The aggregate must treat unknown as not-green, because the board's question is "is anything wrong" and "we can't tell" is a different answer from "no".
+
+What the aggregation destroys, and the defence
+Destroyed	Defence
+Which layer	Restored by one mandatory sentence: "Amber — SENSOR-003 uncommissioned for tilt since 12 Aug." The colour is the summary; the sentence is the payload. A colour with no sentence is not shippable.
+How long / trend	Genuinely lost, and genuinely fine. A board asks about state; trend belongs in the monthly report, which already carries coverage_percent and gap_minutes.
+Severity ordering within a layer	Lost by design. Three amber sensors and one amber sensor are the same decision for a board and different decisions for a technician — which is why the technician doesn't use this number.
+"Fine" vs "couldn't look"	Refused. This one I will not destroy. It gets its own state, or amber. Collapsing it is the failure this appliance was built after.
+What I'd refuse
+Green when data is stale. Non-negotiable.
+The number standing alone. It links to the three services or it isn't published. A board that can only see the colour will eventually ask why nobody warned them, and the honest answer must be "you were told, here".
+A percentage. "97% healthy" invites arithmetic on incommensurable things and implies precision the aggregation destroyed.
+Aggregate the answer, never the evidence. One colour, one sentence, one link.
+
+Q2 — Making deletion detectable by a party who distrusts the operator
+ADR-016's trigger stops the application. It cannot stop DROP TABLE. So the next layer cannot live inside the appliance at all — anything the operator controls, the operator can rewrite consistently.
+
+The mechanism
+Hash-chain the audit log, then anchor the head outside the operator's reach.
+
+Chaining alone is not enough: an operator with DDL rewrites every row and every hash. The chain only becomes evidence when its head is held by somebody who cannot be edited.
+
+So: publish the chain head — one 64-character string — to a third party on a schedule. The client's own system, a timestamping authority, an email to the client's engineer, the client's monthly invoice. Then:
+
+deleting rows breaks the chain against a head the client already holds
+rewriting the chain produces a head that disagrees with the one the client already holds
+the operator cannot fix either without the client's cooperation
+The security property is not cryptography. It is that somebody else already has a copy. The hash is only what makes a small copy sufficient.
+
+What it buys, precisely
+Not prevention — bounded detection. The anchoring interval is the window in which tampering is undetectable. Anchor hourly, and history older than an hour is sealed. That bound must be stated, because "tamper-evident" without an interval is marketing.
+
+And it seals the audit log, not the measurements. Measurements would need the same treatment — or, cheaper, the audit log records a periodic digest of the measurement table, so deleting readings breaks an already-published hash.
+
+The air-gapped cost
+No network means no automatic anchoring, and the honest answer is: you cannot have continuous tamper-evidence in an air-gapped installation. What you can have:
+
+Mechanism	Anchoring interval	Cost
+Printed chain head, countersigned at each site visit	months	a ritual that will be skipped
+Write-once medium (BD-R) rotated by the client	weeks	media handling, client discipline
+Client's own USB taken away each visit	per visit	courier, and the client must store it
+A second appliance the operator does not control	continuous	doubles the hardware, moves the trust problem
+The undetectable-tampering window becomes the site-visit interval — months, not minutes — and the weakest link becomes a human remembering to sign a sheet.
+
+So the deliverable changes shape. Instead of "the audit log is tamper-evident", you write: "the audit log is sealed to the last countersigned head, dated 14 March. Everything after that date rests on trusting the operator." That sentence is the product. A client who understands it can decide whether the visit interval is acceptable; a client told "tamper-proof" cannot.
+
+Q3 — v3 in the lawyer's hand, v4 on your disk
+What you hand over
+The v3 report exactly as issued. Not regenerated — the stored artefact, with its content_checksum, processing_version, software_version, generated_at, generated_by.
+A v4 report for the identical window, plainly labelled as produced later under different arithmetic.
+A written statement of what changed between v3 and v4, why, and when it was discovered.
+Both reports' coverage blocks — coverage_percent, gap_minutes, minutes_with_data.
+Point 4 is the one people forget and the one a lawyer will find. If the window had 82% coverage, both reports are computed over 82% of it, and neither was ever a complete record of the period. That is in the document already, and it is far better said by you first.
+
+Is the old report still true?
+Yes — as the thing it actually claims to be.
+
+The v3 report asserts: "On this date, this appliance, running this software, under processing version 3, computed these figures from the data it then held." That statement is true, was true, and remains true. The checksum proves it hasn't been altered since.
+
+It has never asserted: "the structure did X" independent of method. No instrument report can.
+
+So three questions, and only conflating them causes trouble:
+
+Question	Answer
+Was v3 honestly produced?	Yes. Checksum and version fields prove it.
+Does v3 reflect current best understanding?	No. v4 does.
+Is v4 therefore right?	Only if v4's change was a correction. That has to be defended on its merits, not by being newer.
+What you say
+"The v3 report is an accurate record of what we computed in March. In June we found a defect in [the arithmetic], corrected it, and the same period now computes as [X]. Here is both, here is the change, here is when we found it. The difference is a defect in our method, not a change in the structure — the underlying measurements are identical and unaltered, and here is their checksum."
+
+The thing that makes that survivable is that the version was recorded before anyone needed it. You cannot retrofit provenance during a dispute. processing_version costs one column and is worth nothing until precisely this moment.
+
+Two things I'd fix before this happens
+reports has no append-only trigger. audit_events does; reports don't. A stored report can be updated. For a document that may end up in a dispute, that's the wrong asymmetry — the artefact you'll be asked to produce is less protected than the log of who produced it.
+
+PROCESSING_VERSION is 1.0.0 and has never been bumped, so the mechanism is untested. The first time it matters must not be the first time it runs.
+
+Q4 — Three carried unchanged, one changed
+Carried: the disk write between irreversible and retryable work
+Sensor-independent, protocol-independent, client-independent. It converted a sixteen-hour database outage into 187,671 readings held and zero lost, and a 133-second reboot into a bounded gap.
+
+The reasoning transfers to anything: a measurement is a moment that never comes back; delivery can be retried. Put a local, synchronous, dependency-free write between them. I would build this before the sensor driver, on any appliance, always.
+
+Carried: a wrong map produces plausible numbers, so provenance gates authority
+ADR-005. A wrong register map doesn't crash — it reports 0.0213 g where the truth is 0.0426, and the dashboard renders it beautifully.
+
+Two register-map faults were found here, and neither was visible from stored data. Both were caught by moving the sensor and watching which words changed.
+
+The general form — nothing may drive a consequence until its provenance is established on hardware — applies to any instrument. It cost a commissioning gate and it is the cheapest insurance in the repository.
+
+Carried: refuse to compute rather than substitute a default
+inclination() returning {} because "substituting zero would silently invent an orientation". spectral_verdict() refusing above 0.4× the measured rate. The capacity model printing NOT MODELLED rather than a confident wrong 2.8%.
+
+The enemy is the same everywhere: 0, -999, a clamped range, an averaged-away gap. Each turns "I don't know" into a number, and every consumer downstream then treats it as data.
+
+This is the one I'd carry hardest, because it costs nothing and is nearly impossible to retrofit — by the time you want it, callers already depend on getting a number.
+
+Changed: I would not accept hardware that cannot identify itself
+ADR-008 keys sensor identity to physical USB topology, because CH340 adapters carry no serial number. That decision was correct given the hardware — and look at what it cost:
+
+a swap is undetectable once mounted
+a magnitude cross-match was built, shipped, tested, and disproved by a physical swap
+the replacement rests on temperature offsets and refuses below 0.25 °C spread — a floor now measured to be within 0.007 °C of being breached by ordinary drift
+a whole mounting-day procedure exists to compensate
+On a new appliance I would make identity-bearing hardware a purchasing constraint: adapters with a real USB serial number, or sensors with a readable identity, and refuse to commission on anything else. It costs about $10 per channel and deletes an entire failure class.
+
+When that would be wrong
+When the client already owns the hardware. Refusing to ship over ten-dollar adapters is not engineering judgement, it's fastidiousness. The correct move then is ADR-008 plus the temperature fingerprint — exactly what this repo has.
+
+When the topology genuinely is the identity. Analogue sensors on a multiplexer: channel 3 is the sensor. There's nothing to read and nothing to write, and inventing an identity layer adds a thing that can disagree with reality.
+
+On a single-sensor installation. Identity is trivial; the machinery is waste.
+
+And the sharpest one — when it produces false confidence. A serial number identifies the adapter, not the sensor. Move a sensor between two identified adapters and you are exactly where you started, except now the appliance reports a stable identity with confidence, and the temperature fingerprint that would have caught it was never built because the problem looked solved.
+
+A partial identity solution presented as a complete one is worse than the topological scheme that was honest about its limits.
+
+So the change is only right if it comes with the constraint stated plainly at the interface: identity is guaranteed from the adapter inwards, and from the adapter outwards it is a cable tie and a procedure. If I can't hold that line in the documentation, I should keep ADR-008 and the fingerprint, and accept that mounting day is a ritual.
+
 ---
 
 *End of course. The questions are the point; the lessons were only scaffolding for them.*
