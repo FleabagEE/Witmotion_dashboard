@@ -231,6 +231,125 @@ The full arc of this course, in one line: **be accurate, be humble about what yo
 
 **4.** ADR-017 suppresses non-escalating changes as noise. Construct a scenario where an alarm *decreasing* in severity is genuinely urgent information. Does one exist? If it does, redesign the gate; if it does not, prove it — and note that "prove a negative about human needs" is itself an interesting architectural claim.
 
+
+Q1 — Where persistence and hysteresis fight
+The mechanism
+targetLevel() applies hysteresis only to levels at or below the current one:
+
+While the alarm sits at normal, every level is above current, so nothing is damped. A value crossing back and forth over critical_at alternates the target between warning and critical.
+
+And persistence resets on every change of candidate:
+
+So with an oscillation period shorter than persistence_seconds, the countdown never completes. The alarm stays normal for ever.
+
+This is a deadlock, not a delay. Hysteresis would break the tie — but hysteresis only engages once you are in a level, and persistence is what prevents you getting there. Each mechanism is disabled by exactly the condition the other creates.
+
+Why it's worse than it looks
+The failure is inverted in severity. Mild steady vibration alarms; violent oscillating vibration does not. And oscillating around a threshold is what a real structural event looks like — resonance, an unbalanced machine running up, an aftershock sequence. Steady 4 mm/s is what a fridge compressor looks like.
+
+Your live high_threshold definitions carry persist=3600 and thresholds 3/10 mm/s. This configuration is deployed.
+
+Validation that would catch it before a site does
+Not more unit tests of each mechanism — they all pass individually. Two things:
+
+1. A property test over shipped definitions. For every enabled definition, feed a synthetic signal that never drops below the lowest threshold, in several shapes: steady, ramp, square wave at a range of periods, random walk. Assert one invariant:
+
+If the value never returns below the lowest threshold, the alarm must not remain normal for longer than 2× persistence.
+
+That's a claim about the state machine, not about a number, and every configuration must satisfy it. The square-wave-at-half-persistence case fails today.
+
+2. A configuration lint. Some combinations are contradictory on their face:
+
+Twelve of your definitions have this. Look at the code order — latching returns early on any downward transition, so clear_seconds is never read. An operator reading that row believes the alarm clears in 6 hours. It clears when acknowledged, never otherwise. That's not a bug in behaviour; it's a lie in the configuration, and a lint can catch it statically.
+
+The general principle: unit-test each mechanism, but property-test their composition. Bugs in a state machine live in the interactions, and interactions are exactly what example-based tests miss.
+
+Q2 — Persistence surviving a restart it didn't earn
+The attack
+candidate_since is persisted so a partially satisfied condition survives a restart. But a crash-looping appliance accumulates wall-clock time while measuring nothing. After an hour of 30-second crash loops, candidate_since is an hour old and persistence is "satisfied" on perhaps four samples.
+
+Why uptime is the wrong evidence
+The obvious guard — record process start time, reset the candidate if the process restarted — is insufficient, and this appliance has already proved why:
+
+3,366 rows, zero readings, 37 minutes, every breaker open, three sensors reported healthy.
+
+The process was up the whole time. Uptime proves the program was running, not that anything was observed. That's the same distinction as last_measurement_at versus last_good_measurement_at from round 7, and it cost this project a real incident.
+
+The design
+Persistence should be counted in observations, not seconds.
+
+Store alongside candidate_since a count of good evaluations contributing to it. Then:
+
+and honour the candidate only when both the elapsed time and the observation count are satisfied.
+
+The evidence that proves observation is the measurements themselves: distinct minutes carrying a good reading on that channel between candidate_since and now, compared against the channel's measured rate — which ADR-007 already stores, so the expected count is known per channel rather than assumed.
+
+On failure, don't discard the candidate — re-base it to the moment observation resumed. Discarding punishes a genuine condition for an unrelated restart; re-basing says "the clock starts when we could see again."
+
+The wider rule:
+
+Any state that survives a restart must be validated against evidence that also survives the restart. A timestamp is not evidence of anything but a clock.
+
+Q3 — Friday commissioning, Saturday event
+The defence, honestly given
+The alarm fired. It was on the dashboard, at the correct level, with the correct value. What was withheld was the notification, because the threshold it was judged against had no name attached to it.
+
+The reasoning is that a page from an unvalidated number is worse than no page — not for this event, but for every future one, because a channel that pages on numbers nobody stands behind gets muted, and then the page that mattered is missed too. The appliance had 27 such alarms this week.
+
+And I don't think that defence survives contact with a damaged silo. It's an argument about long-run channel health delivered to somebody with an immediate loss. It's true, and it will sound like an excuse, because it is a reason and not an answer.
+
+The real failure is upstream
+Nobody signed off, and the appliance let commissioning complete anyway. It reported itself healthy, showed green, and served a dashboard, while being — by its own gate — incapable of telling anyone anything. That is the defect. The gate did its job; the installation process claimed completeness it hadn't earned.
+
+What I'd change
+Not "trust the defaults." Three changes, none of which do that:
+
+1. An uncommissioned appliance must not present as commissioned. MonitoringCoverage already does this for tilt — 3 of 4, with the remedy. The same for thresholds: an appliance with unconfirmed limits shows it on every page, and the handover document cannot be generated. Refuse the claim of completeness, not the alarm.
+
+2. Separate the observation from the judgement. The current design conflates "we don't trust this number" with "we will tell you nothing." Those are separable. A provisional alarm can notify with its status attached:
+
+PROVISIONAL — SENSOR-002 vibration 47 mm/s. This threshold (10 mm/s) has not been confirmed by anyone, so we cannot say whether it matters. Somebody should look.
+
+That asserts no authority it lacks, and it reaches a human. Reporting an observation is not the same as certifying a judgement, and only the second needed the signature.
+
+3. Escalate the unsigned state to the installer, not the client. An appliance sitting unconfirmed for 48 hours should be chasing the person who installed it. That's the party who can fix it, and the current design tells nobody.
+
+Q4 — Is a de-escalation ever urgent?
+Yes. One exists, and this appliance has already produced it.
+
+The scenario
+A vibration alarm is at critical. The sensor's amplitude channel stops producing good readings — a cable works loose, an adapter is replugged, the breaker opens. Values stop arriving or arrive as bad.
+
+The alarm de-escalates toward normal, and under ADR-017, nobody is told.
+
+The appliance has just reported an improvement caused entirely by having stopped looking.
+
+This is not hypothetical:
+
+2026-08-11 — three sensors, 3,366 rows, zero readings, 37 minutes, every circuit breaker open, and the appliance reported three healthy sensors.
+
+If a structural alarm had been active in that window, it would have silently fallen to normal, and the dashboard ADR-017 relies on would have shown green.
+
+Why ADR-017's reasoning doesn't cover it
+The ADR says de-escalation is "noise the dashboard already shows." That's a claim about channel, not about value — and it holds only if the dashboard is trustworthy at that moment. In this case the dashboard is showing the same false improvement, from the same cause. Both channels fail together, because they share the failure.
+
+The redesign
+Suppress a de-escalation only when the evidence for it is at least as strong as the evidence that raised the alarm.
+
+Phrased as a rule:
+
+"It got better" and "we stopped looking" are different events with the same shape. Only the first is noise.
+
+The appliance already has every input needed — last_good_measurement_at from round 7, breaker state in the engine metrics, quality on every row. What it lacks is the question.
+
+On proving a negative about human needs
+You're right that it's an interesting claim, and it's worth naming precisely: ADR-017 does not claim de-escalation is never information. It claims it is never information that needs to interrupt someone.
+
+That's a much narrower and more defensible claim — and it is still falsifiable, which is what makes it a real engineering statement rather than a preference. The counter-example above falsifies it, and it does so without appealing to anybody's feelings: it identifies a case where the de-escalation carries information the dashboard provably cannot, because the dashboard's source has failed in the same way.
+
+The safe form of "nobody needs to be told X" is "nobody needs to be told X, given Y is also true." Name the Y, and the claim becomes testable. ADR-017's unstated Y was "the dashboard is showing the truth" — and once written down, the exception is obvious.
+
+
 ---
 
 *Next: Lesson 12 — Three Questions and the Evidence Trail.*
